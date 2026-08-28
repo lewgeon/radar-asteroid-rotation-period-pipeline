@@ -1,0 +1,9 @@
+[submodule "echo"]
+	path = echo
+	url = https://github.com/lewgeon/asteroid-echo.git
+[submodule "observation"]
+	path = observation
+	url = https://github.com/lewgeon/asteroid-observation.git
+[submodule "inversion"]
+	path = inversion
+	url = https://github.com/lewgeon/asteroid-rotation-period-measurement.git

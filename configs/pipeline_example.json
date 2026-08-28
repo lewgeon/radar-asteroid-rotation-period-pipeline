@@ -1,0 +1,64 @@
+{
+  "observation": {
+    "target": {
+      "id": "linear-test-target",
+      "name": "linear-test-target",
+      "state": "linear",
+      "position0_m": [299792458.0, 0.0, 0.0],
+      "velocity_m_s": [0.0, 120.0, 0.0]
+    },
+    "transmitter": {
+      "name": "static-origin-transmitter",
+      "state": "static",
+      "position_m": [0.0, 0.0, 0.0]
+    },
+    "receiver": {
+      "name": "static-origin-receiver",
+      "state": "static",
+      "position_m": [0.0, 0.0, 0.0]
+    },
+    "receive": {
+      "start_utc": "2026-01-01T00:00:00.000",
+      "duration_s": 60.0,
+      "sample_rate_hz": 16.0
+    },
+    "solver": {
+      "tolerance_s": 1e-9,
+      "max_iter": 32
+    }
+  },
+  "echo": {
+    "model_path": "models/ellipsoid.obj",
+    "seed": 20250729,
+    "compute": {
+      "device": "auto",
+      "dtype": "float32"
+    },
+    "target": {
+      "rotation_period_s": 20.0,
+      "initial_phase_deg": 17.0,
+      "spin_pole_icrs_deg": [105.0, -66.0]
+    },
+    "scattering_power": [1.0, 1.0],
+    "scattering_spot": {
+      "direction_body": [1.0, 0.25, 0.15],
+      "radius_deg": 28.0,
+      "strength": 5.0
+    },
+    "radar": {
+      "carrier_frequency_hz": 1000000.0
+    },
+    "waveform": {
+      "type": "continuous_wave",
+      "amplitude": 1.0
+    },
+    "snr_db": 20.0
+  },
+  "inversion": {
+    "stft_window_samples": 256,
+    "stft_overlap_fraction": 0.75,
+    "period_min_s": 8.0,
+    "period_max_s": 40.0,
+    "period_grid_size": 4000
+  }
+}

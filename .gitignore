@@ -1,0 +1,10 @@
+outputs/
+runs/
+tmp/
+__pycache__/
+.ipynb_checkpoints/
+*.npz
+*.pyc
+.gui_state/
+.claude/
+CLAUDE.md
