@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -36,6 +37,7 @@ GROUP_LABELS = {
     "transmitter": "发射站",
     "receiver": "接收站",
     "receive": "接收设置",
+    "ephemeris": "星历查询",
     "solver": "求解器",
     "compute": "计算设置",
     "scattering_spot": "散射热点",
@@ -47,13 +49,24 @@ CHOICES = {
     "device": ("auto", "cuda:0", "cpu"),
     "dtype": ("float32", "float64"),
     "type": ("continuous_wave",),
+    "object_type": ("null", "smallbody"),
+    "query_mode": ("auto", "range", "list"),
 }
+HORIZONS_OBJECT_TYPE_ALIASES = {
+    "": None,
+    "none": None,
+    "null": None,
+    "small body": "smallbody",
+    "small_body": "smallbody",
+    "small-body": "smallbody",
+}
+HORIZONS_OBJECT_TYPES = {None, "smallbody"}
 STATE_FIELDS = {
     "static": ("position_m",),
     "linear": ("position0_m", "velocity_m_s"),
     "geodetic_fixed": ("lat_deg", "lon_deg", "height_m"),
     "astropy_geodetic": ("lat_deg", "lon_deg", "height_m"),
-    "horizons_vectors": ("id", "object_type", "location", "refplane", "query_step_s", "padding_s"),
+    "horizons_vectors": ("id", "object_type"),
 }
 STATE_DEFAULTS = {
     "position_m": [0.0, 0.0, 0.0],
@@ -63,13 +76,32 @@ STATE_DEFAULTS = {
     "lon_deg": 0.0,
     "height_m": 0.0,
     "object_type": None,
+}
+EPHEMERIS_FIELD_DEFAULTS = {
     "location": "@399",
     "refplane": "earth",
-    "query_step_s": 60.0,
     "padding_s": 7200.0,
+    "query_step_s": 60.0,
+    "query_mode": "auto",
+    "query_chunk_size": 80,
+    "min_query_chunk_size": 5,
+    "query_retries": 2,
+    "cache": True,
 }
+EPHEMERIS_FIELD_ORDER = (
+    "location",
+    "refplane",
+    "padding_s",
+    "query_step_s",
+    "query_mode",
+    "query_chunk_size",
+    "min_query_chunk_size",
+    "query_retries",
+    "cache",
+)
 COMMON_FIELD_ORDER = ("id", "name", "state")
 DPI_AWARENESS_SET = False
+PROGRESS_PREFIX = "__PROGRESS__ "
 
 
 def enable_dpi_awareness() -> None:
@@ -196,6 +228,7 @@ class PipelineGui(tk.Tk):
 
         self.config_path = DEFAULT_CONFIG_PATH
         self.config_data = self._load_initial_config()
+        self._migrate_config()
         self.current_stage = STAGES[0]
         self.stage_status = {stage: "待执行" for stage in STAGES}
         self.field_vars: dict[str, tk.StringVar] = {}
@@ -208,12 +241,16 @@ class PipelineGui(tk.Tk):
         self.latest_result_path: Path | None = None
         self.command_queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self.worker: threading.Thread | None = None
+        self.current_process: subprocess.Popen | None = None
+        self.stop_requested = False
 
         self.run_name_var = tk.StringVar(value=self._default_run_name())
         self.runs_dir_var = tk.StringVar(value="runs")
         self.python_var = tk.StringVar(value=sys.executable)
         self.config_path_var = tk.StringVar(value=str(self.config_path))
         self.status_var = tk.StringVar(value="就绪")
+        self.progress_var = tk.IntVar(value=0)
+        self.progress_text_var = tk.StringVar(value="就绪")
 
         self._build_ui()
         self._render_stage_buttons()
@@ -263,13 +300,15 @@ class PipelineGui(tk.Tk):
 
         sidebar = ttk.Frame(content_pane, padding=(0, 0, 8, 0))
         sidebar.columnconfigure(0, weight=1)
-        sidebar.rowconfigure(4, weight=1)
+        sidebar.rowconfigure(5, weight=1)
         self.stage_button_frame = ttk.LabelFrame(sidebar, text="流水线阶段", padding=8)
         self.stage_button_frame.grid(row=0, column=0, sticky="ew")
         self.next_button = ttk.Button(sidebar, text="执行下一步", command=self._run_current_stage, style="Accent.TButton")
         self.next_button.grid(row=1, column=0, sticky="ew", pady=(12, 6))
-        ttk.Button(sidebar, text="保存参数", command=self._save_current_config).grid(row=2, column=0, sticky="ew")
-        ttk.Button(sidebar, text="另存 JSON", command=self._save_config_as_json).grid(row=3, column=0, sticky="ew", pady=(6, 0))
+        self.stop_button = ttk.Button(sidebar, text="中止", command=self._stop_current_stage, state="disabled")
+        self.stop_button.grid(row=2, column=0, sticky="ew", pady=(0, 6))
+        ttk.Button(sidebar, text="保存参数", command=self._save_current_config).grid(row=3, column=0, sticky="ew")
+        ttk.Button(sidebar, text="另存 JSON", command=self._save_config_as_json).grid(row=4, column=0, sticky="ew", pady=(6, 0))
 
         self.history_tree = ttk.Treeview(sidebar, columns=("time", "stage", "status"), show="headings", height=15)
         self.history_tree.heading("time", text="时间")
@@ -278,7 +317,7 @@ class PipelineGui(tk.Tk):
         self.history_tree.column("time", width=132, anchor="w")
         self.history_tree.column("stage", width=86, anchor="w")
         self.history_tree.column("status", width=64, anchor="center", stretch=True)
-        self.history_tree.grid(row=4, column=0, sticky="nsew", pady=(12, 0))
+        self.history_tree.grid(row=5, column=0, sticky="nsew", pady=(12, 0))
 
         main = ttk.Frame(content_pane, padding=(8, 0, 0, 0))
         main.columnconfigure(0, weight=1)
@@ -331,7 +370,16 @@ class PipelineGui(tk.Tk):
         footer = ttk.Frame(self, padding=(14, 0, 14, 10))
         footer.grid(row=3, column=0, columnspan=2, sticky="ew")
         footer.columnconfigure(0, weight=1)
+        footer.columnconfigure(1, weight=1)
         ttk.Label(footer, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
+        self.progress_bar = ttk.Progressbar(
+            footer,
+            variable=self.progress_var,
+            maximum=100,
+            mode="determinate",
+        )
+        self.progress_bar.grid(row=0, column=1, sticky="ew", padx=(12, 8))
+        ttk.Label(footer, textvariable=self.progress_text_var, width=28).grid(row=0, column=2, sticky="e")
         self._draw_result_placeholder("执行阶段后会在这里显示关键结果。")
 
     def _paned_window(self, master, orient):
@@ -374,6 +422,7 @@ class PipelineGui(tk.Tk):
             button.grid(row=index, column=0, sticky="ew", pady=3)
 
     def _render_current_stage(self) -> None:
+        self._migrate_config()
         for child in self.params_scroll.inner.winfo_children():
             child.destroy()
         self.field_vars.clear()
@@ -490,6 +539,32 @@ class PipelineGui(tk.Tk):
             return ("static", "geodetic_fixed", "astropy_geodetic", "linear")
         return CHOICES[key]
 
+    def _migrate_config(self) -> None:
+        observation = self.config_data.get("observation")
+        if not isinstance(observation, dict):
+            return
+        target = observation.get("target")
+        if not isinstance(target, dict):
+            return
+
+        if "horizons_id" in target:
+            if "id" not in target:
+                target["id"] = target["horizons_id"]
+            target.pop("horizons_id", None)
+        if "id_type" in target:
+            if "object_type" not in target:
+                target["object_type"] = target["id_type"]
+            target.pop("id_type", None)
+
+        ephemeris = observation.setdefault("ephemeris", {})
+        if target.get("state") == "horizons_vectors":
+            for key in EPHEMERIS_FIELD_ORDER:
+                if key in target:
+                    ephemeris.setdefault(key, target[key])
+                    target.pop(key, None)
+            for key, value in EPHEMERIS_FIELD_DEFAULTS.items():
+                ephemeris.setdefault(key, copy.deepcopy(value))
+
     def _render_history(self) -> None:
         for item in self.history_tree.get_children():
             self.history_tree.delete(item)
@@ -523,6 +598,7 @@ class PipelineGui(tk.Tk):
             return
         self.config_path = path
         self.config_data = data
+        self._migrate_config()
         self.run_name_var.set(path.stem)
         self.current_stage = STAGES[0]
         self.stage_status = {stage: "待执行" for stage in STAGES}
@@ -590,6 +666,8 @@ class PipelineGui(tk.Tk):
         for path, var in self.field_vars.items():
             assign_path(stage_payload, path, parse_value(var.get()))
         self.config_data[self.current_stage] = stage_payload
+        self._migrate_config()
+        self._normalize_horizons_object_type()
 
     def _save_current_config(self) -> None:
         try:
@@ -645,6 +723,7 @@ class PipelineGui(tk.Tk):
         )
 
     def _validate_role_states(self) -> None:
+        self._normalize_horizons_object_type()
         observation = self.config_data.get("observation", {})
         target_state = observation.get("target", {}).get("state")
         if target_state not in {"linear", "static", "horizons_vectors"}:
@@ -658,6 +737,40 @@ class PipelineGui(tk.Tk):
             if state not in station_allowed:
                 raise ValueError(f"{role}.state 当前不支持 {state}，请使用 static/geodetic_fixed/astropy_geodetic/linear。")
 
+        target = observation.get("target", {})
+        if target.get("state") == "horizons_vectors":
+            if "id_type" in target or "horizons_id" in target:
+                raise ValueError("target 中不再支持 id_type/horizons_id，请使用 id 和 object_type。")
+            object_type = target.get("object_type")
+            if object_type not in HORIZONS_OBJECT_TYPES:
+                raise ValueError(
+                    f"target.object_type={object_type!r} 不是当前配置支持的目标类型。"
+                    "当前 GUI 仅支持 null 或 smallbody。"
+                )
+
+    def _normalize_horizons_object_type(self) -> None:
+        target = self.config_data.get("observation", {}).get("target", {})
+        if not isinstance(target, dict) or target.get("state") != "horizons_vectors":
+            return
+        if "horizons_id" in target:
+            if "id" not in target:
+                target["id"] = target["horizons_id"]
+                self._append_log(f"[{now_text()}] 已将弃用字段 target.horizons_id 迁移为 target.id。")
+            target.pop("horizons_id", None)
+        if "id_type" in target:
+            if "object_type" not in target:
+                target["object_type"] = target["id_type"]
+                self._append_log(f"[{now_text()}] 已将弃用字段 target.id_type 迁移为 target.object_type。")
+            target.pop("id_type", None)
+        value = target.get("object_type")
+        if isinstance(value, str):
+            normalized = HORIZONS_OBJECT_TYPE_ALIASES.get(value.strip().lower(), value.strip())
+        else:
+            normalized = value
+        if normalized != value:
+            target["object_type"] = normalized
+            self._append_log(f"[{now_text()}] 已将 target.object_type 从 {value!r} 归一化为 {normalized!r}。")
+
     def _on_close(self) -> None:
         try:
             if self.preview_resize_after_id is not None:
@@ -669,6 +782,7 @@ class PipelineGui(tk.Tk):
             self._save_state()
         except Exception:
             pass
+        self._terminate_current_process()
         self.destroy()
 
     def _run_current_stage(self) -> None:
@@ -691,6 +805,9 @@ class PipelineGui(tk.Tk):
         self.stage_status[stage] = "执行中"
         self._render_stage_buttons()
         self.next_button.configure(state="disabled")
+        self.stop_button.configure(state="normal")
+        self.stop_requested = False
+        self._set_progress(stage, 0, "启动子进程")
         self.status_var.set(f"正在执行：{STAGE_LABELS[stage]}")
         self._append_log(f"\n[{now_text()}] 开始执行 {STAGE_LABELS[stage]}")
 
@@ -701,6 +818,30 @@ class PipelineGui(tk.Tk):
         )
         self.worker.start()
 
+    def _stop_current_stage(self) -> None:
+        if not self.worker or not self.worker.is_alive():
+            return
+        self.stop_requested = True
+        self.stop_button.configure(state="disabled")
+        self.status_var.set("正在中止当前计算")
+        self.progress_text_var.set("正在中止")
+        self._append_log(f"[{now_text()}] 用户请求中止当前计算。")
+        self._terminate_current_process()
+
+    def _terminate_current_process(self) -> None:
+        process = self.current_process
+        if process is None or process.poll() is not None:
+            return
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            return
+        process.terminate()
+
     def _run_stage_worker(self, stage: str, run_name: str, runs_dir: str, python_exe: str, config_data: dict) -> None:
         try:
             run_dir = pipeline.abs_path(runs_dir) / run_name
@@ -710,9 +851,21 @@ class PipelineGui(tk.Tk):
             write_json(config_dir / "observation.generated.json", prepared["observation"])
             write_json(config_dir / "echo.generated.json", prepared["echo"])
             write_json(config_dir / "inversion.generated.json", prepared["inversion"])
+            raw_log_path = run_dir / "logs" / f"{stage}.log"
+            raw_log_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_log_path.write_text("", encoding="utf-8")
 
             command, cwd, env = self._stage_command(stage, python_exe, config_dir, prepared)
             self.command_queue.put(("log", f"命令：{' '.join(map(str, command))}\n工作目录：{cwd}"))
+            self.command_queue.put(("log", f"完整原始输出日志：{raw_log_path}"))
+            self.command_queue.put((
+                "log",
+                "生成配置：\n"
+                f"  experiment: {config_dir / 'experiment.json'}\n"
+                f"  observation: {config_dir / 'observation.generated.json'}\n"
+                f"  echo: {config_dir / 'echo.generated.json'}\n"
+                f"  inversion: {config_dir / 'inversion.generated.json'}",
+            ))
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
@@ -724,18 +877,34 @@ class PipelineGui(tk.Tk):
                 errors="replace",
                 bufsize=1,
             )
+            self.current_process = process
             assert process.stdout is not None
-            for line in process.stdout:
-                self.command_queue.put(("log", line.rstrip()))
+            with raw_log_path.open("a", encoding="utf-8", errors="replace") as raw_log:
+                for line in process.stdout:
+                    raw_log.write(line)
+                    clean_line = line.rstrip()
+                    if clean_line.startswith(PROGRESS_PREFIX):
+                        self.command_queue.put(("progress", clean_line[len(PROGRESS_PREFIX):]))
+                    else:
+                        self.command_queue.put(("log", self._shorten_log_line(clean_line)))
             code = process.wait()
+            self.current_process = None
+            if self.stop_requested:
+                self.command_queue.put(("stopped", json.dumps({"stage": stage, "run_dir": str(run_dir)}, ensure_ascii=False)))
+                return
             if code != 0:
                 raise RuntimeError(f"{STAGE_LABELS[stage]} 失败，退出码 {code}")
             self.command_queue.put(("done", json.dumps({"stage": stage, "run_dir": str(run_dir)}, ensure_ascii=False)))
         except Exception as exc:
+            self.current_process = None
+            if self.stop_requested:
+                self.command_queue.put(("stopped", json.dumps({"stage": stage, "run_dir": ""}, ensure_ascii=False)))
+                return
             self.command_queue.put(("failed", json.dumps({"stage": stage, "error": str(exc)}, ensure_ascii=False)))
 
     def _stage_command(self, stage: str, python_exe: str, config_dir: Path, prepared: dict):
-        env = None
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
         if stage == "observation":
             return (
                 [
@@ -762,7 +931,6 @@ class PipelineGui(tk.Tk):
                 ROOT / "echo",
                 env,
             )
-        env = os.environ.copy()
         inversion_src = str(ROOT / "inversion" / "src")
         env["PYTHONPATH"] = inversion_src + os.pathsep + env.get("PYTHONPATH", "")
         return (
@@ -792,12 +960,35 @@ class PipelineGui(tk.Tk):
                 elif kind == "failed":
                     data = json.loads(payload)
                     self._handle_stage_failed(data["stage"], data["error"])
+                elif kind == "progress":
+                    self._handle_progress_payload(payload)
+                elif kind == "stopped":
+                    data = json.loads(payload)
+                    self._handle_stage_stopped(data["stage"], data.get("run_dir", ""))
         except queue.Empty:
             pass
         self.after(120, self._drain_command_queue)
 
+    def _handle_progress_payload(self, payload: str) -> None:
+        try:
+            data = json.loads(payload)
+            stage = str(data.get("stage") or self.current_stage)
+            percent = int(data.get("percent", 0))
+            message = str(data.get("message", ""))
+        except Exception:
+            return
+        self._set_progress(stage, percent, message)
+
+    def _set_progress(self, stage: str, percent: int, message: str) -> None:
+        percent = max(0, min(100, int(percent)))
+        label = STAGE_LABELS.get(stage, stage)
+        self.progress_var.set(percent)
+        self.progress_text_var.set(f"{percent}%  {message}")
+        self.status_var.set(f"{label}：{message}")
+
     def _handle_stage_done(self, stage: str, run_dir: str) -> None:
         self.stage_status[stage] = "完成"
+        self._set_progress(stage, 100, "完成")
         self._append_history(stage, "成功", run_dir, "")
         self._update_result_preview(stage, Path(run_dir))
         next_stage = self._next_stage(stage)
@@ -808,6 +999,7 @@ class PipelineGui(tk.Tk):
         else:
             self.status_var.set(f"全部阶段已完成。实验目录：{run_dir}")
         self.next_button.configure(state="normal")
+        self.stop_button.configure(state="disabled")
         self._render_stage_buttons()
         self._render_history()
         self._append_log(f"[{now_text()}] {STAGE_LABELS[stage]} 完成。实验目录：{run_dir}")
@@ -816,11 +1008,25 @@ class PipelineGui(tk.Tk):
         self.stage_status[stage] = "失败"
         self._append_history(stage, "失败", "", error)
         self.next_button.configure(state="normal")
+        self.stop_button.configure(state="disabled")
         self.status_var.set(f"{STAGE_LABELS[stage]} 失败")
+        self.progress_text_var.set("失败")
         self._render_stage_buttons()
         self._render_history()
         self._append_log(f"[{now_text()}] {STAGE_LABELS[stage]} 失败：{error}")
         messagebox.showerror("执行失败", error)
+
+    def _handle_stage_stopped(self, stage: str, run_dir: str) -> None:
+        self.stage_status[stage] = "已中止"
+        self._append_history(stage, "中止", run_dir, "")
+        self.next_button.configure(state="normal")
+        self.stop_button.configure(state="disabled")
+        self.status_var.set(f"{STAGE_LABELS[stage]} 已中止")
+        self.progress_text_var.set("已中止")
+        self._render_stage_buttons()
+        self._render_history()
+        self._append_log(f"[{now_text()}] {STAGE_LABELS[stage]} 已中止。")
+        self.stop_requested = False
 
     def _append_history(self, stage: str, status: str, run_dir: str, error: str) -> None:
         history = read_json(HISTORY_PATH, [])
@@ -839,6 +1045,20 @@ class PipelineGui(tk.Tk):
     def _append_log(self, text: str) -> None:
         self.log_text.insert("end", text + "\n")
         self.log_text.see("end")
+
+    def _shorten_log_line(self, line: str) -> str:
+        if "JPL Horizons 查询失败" in line:
+            return re.sub(r"https://ssd\.jpl\.nasa\.gov/api/horizons\.api\?\S+", "<JPL Horizons URL 已省略>", line)
+        if "Server Error:" in line and "ssd.jpl.nasa.gov/api/horizons.api" in line:
+            return re.sub(r" for url: https://ssd\.jpl\.nasa\.gov/api/horizons\.api\?\S+", " for JPL Horizons URL，完整 URL 已写入原始输出日志。", line)
+        if "Request-URI Too Large for url:" in line:
+            return "requests.exceptions.HTTPError: 414 Client Error: Request-URI Too Large for JPL Horizons URL，完整 URL 已写入原始输出日志。"
+        if "The uri used in this query is very long" in line:
+            return "astroquery 警告：Horizons 查询 URL 很长，完整警告已写入原始输出日志。"
+        line = re.sub(r"https://ssd\.jpl\.nasa\.gov/api/horizons\.api\?\S+", "<JPL Horizons URL 已省略>", line)
+        if len(line) > 600:
+            return line[:600] + " ... [界面日志已截断，完整内容见原始输出日志]"
+        return line
 
     def _update_result_preview(self, stage: str, run_dir: Path) -> None:
         try:
@@ -875,12 +1095,15 @@ class PipelineGui(tk.Tk):
             return image_path, result_path, html_path, "观测解算完成：已生成距离/视线预览和可拖动 3D 画布。"
         if stage == "echo":
             image_path = preview_dir / "echo_preview.png"
+            html_path = preview_dir / "echo_preview.html"
             result_path = run_dir / "echo" / "echo.npz"
-            self._make_echo_preview(result_path, image_path)
-            return image_path, result_path, None, "回波仿真完成：已生成 I/Q、幅度与相位预览。"
+            self._make_echo_preview(result_path, image_path, html_path)
+            return image_path, result_path, html_path, "回波仿真完成：已生成可交互 I/Q、幅度与相位预览。"
         image_path = run_dir / "inversion" / "periodogram.png"
+        html_path = run_dir / "inversion" / "periodogram.html"
         result_path = run_dir / "inversion" / "summary.json"
-        return image_path, result_path, None, "周期反演完成：已显示 periodogram，可打开 summary 查看候选周期。"
+        plotly_path = html_path if html_path.exists() else None
+        return image_path, result_path, plotly_path, "周期反演完成：已生成交互式周期图，可打开 summary 查看完整结果。"
 
     def _make_observation_preview(self, npz_path: Path, image_path: Path, html_path: Path) -> None:
         import matplotlib
@@ -907,7 +1130,7 @@ class PipelineGui(tk.Tk):
         axes[1].set_ylabel("LOS y")
         axes[1].legend(loc="best")
         fig.tight_layout()
-        fig.savefig(image_path, dpi=150)
+        fig.savefig(image_path, dpi=220)
         plt.close(fig)
 
         stride = max(1, len(elapsed) // 800)
@@ -944,13 +1167,15 @@ class PipelineGui(tk.Tk):
             },
             margin={"l": 0, "r": 0, "t": 40, "b": 0},
         )
-        plot.write_html(html_path, include_plotlyjs="cdn")
+        plot.write_html(html_path, include_plotlyjs=True)
 
-    def _make_echo_preview(self, npz_path: Path, image_path: Path) -> None:
+    def _make_echo_preview(self, npz_path: Path, image_path: Path, html_path: Path) -> None:
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import numpy as np
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
 
         data = np.load(npz_path, allow_pickle=True)
         elapsed = data["elapsed_s"]
@@ -970,8 +1195,30 @@ class PipelineGui(tk.Tk):
         axes[2].set_xlabel("Elapsed (s)")
         axes[2].set_ylabel("Phase (rad)")
         fig.tight_layout()
-        fig.savefig(image_path, dpi=150)
+        fig.savefig(image_path, dpi=220)
         plt.close(fig)
+
+        stride = max(1, len(elapsed) // 5000)
+        plot_elapsed = elapsed[::stride]
+        plot_iq = iq[::stride]
+        plot = make_subplots(
+            rows=3,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.07,
+            subplot_titles=("I/Q", "Amplitude", "Unwrapped phase"),
+        )
+        plot.add_trace(go.Scatter(x=plot_elapsed, y=plot_iq.real, mode="lines", name="I"), row=1, col=1)
+        plot.add_trace(go.Scatter(x=plot_elapsed, y=plot_iq.imag, mode="lines", name="Q"), row=1, col=1)
+        plot.add_trace(go.Scatter(x=plot_elapsed, y=np.abs(plot_iq), mode="lines", name="amplitude"), row=2, col=1)
+        plot.add_trace(
+            go.Scatter(x=plot_elapsed, y=np.unwrap(np.angle(plot_iq)), mode="lines", name="phase"),
+            row=3,
+            col=1,
+        )
+        plot.update_xaxes(title_text="Elapsed (s)", row=3, col=1)
+        plot.update_layout(height=620, margin={"l": 55, "r": 20, "t": 45, "b": 40})
+        plot.write_html(html_path, include_plotlyjs=True)
 
     def _display_latest_image(self) -> None:
         if not self.latest_image_path or not self.latest_image_path.exists():

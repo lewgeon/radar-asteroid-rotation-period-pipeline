@@ -8,3 +8,4 @@ __pycache__/
 .gui_state/
 .claude/
 CLAUDE.md
+.vscode/

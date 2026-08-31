@@ -12,6 +12,8 @@ The top-level `pipeline.py` connects the three modules through files. The module
 
 ## Quick Start
 
+For detailed GUI usage, see [GUI User Manual](docs/GUI_USER_MANUAL.md).
+
 ```powershell
 conda activate pytorch
 python pipeline.py --config configs\pipeline_example.json
@@ -28,7 +30,18 @@ The GUI loads initial values from `configs/pipeline_example.json`. The "执行�
 button runs `observation`, `echo`, and `inversion` one stage at a time. Edited
 parameters are saved under `.gui_state/pipeline_gui_state.json` and reused the
 next time the GUI opens. Recent execution history is shown in the left panel.
+While a stage is running, the bottom of the window shows a rough percentage and
+the current sub-step reported by the child module.
+Use "中止" to abort the current stage. The PySide6 GUI embeds Plotly previews in
+the result panel when Qt WebEngine is available, with static images and external
+browser opening kept as fallback.
 The older Tkinter entry point remains available as `python gui_app.py` for fallback.
+
+The GUI uses the same config-preparation rules as `pipeline.py`: before running,
+it writes `experiment.json`, `observation.generated.json`, `echo.generated.json`,
+and `inversion.generated.json` under `runs/<run-name>/configs/`, then runs one
+stage at a time. If a stage fails, check the GUI log for the parameter source and
+generated config paths.
 
 Outputs are written under `runs/<run-name>/` by default. For `configs\pipeline_example.json`, the default run directory is `runs/pipeline_example/`.
 

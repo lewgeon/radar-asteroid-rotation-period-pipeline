@@ -51,6 +51,7 @@ DEFAULT_CONFIG = {
         "target": {
             "rotation_period_s": 20.0,
             "initial_phase_deg": 17.0,
+            "spin_pole_frame": "icrs",
             "spin_pole_icrs_deg": [105.0, -66.0],
         },
         "scattering_power": [1.0, 1.0],
@@ -128,6 +129,14 @@ def run_step(name, command, cwd, env=None):
         raise SystemExit(f"{name} 失败，退出码 {completed.returncode}")
 
 
+def child_env(extra_paths=None):
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    if extra_paths:
+        env["PYTHONPATH"] = os.pathsep.join(extra_paths + [env.get("PYTHONPATH", "")])
+    return env
+
+
 def prepared_configs(config, run_dir):
     observation_output = run_dir / "observation_info.npz"
     echo_output_dir = run_dir / "echo"
@@ -176,6 +185,7 @@ def main():
                 str(prepared["observation_output"]),
             ],
             ROOT / "observation",
+            env=child_env(),
         )
 
     if not args.skip_echo:
@@ -190,11 +200,10 @@ def main():
                 str(prepared["echo_output_dir"]),
             ],
             ROOT / "echo",
+            env=child_env(),
         )
 
-    env = os.environ.copy()
     inversion_src = str(ROOT / "inversion" / "src")
-    env["PYTHONPATH"] = inversion_src + os.pathsep + env.get("PYTHONPATH", "")
     run_step(
         "inversion",
         [
@@ -208,7 +217,7 @@ def main():
             str(prepared["inversion_output_dir"]),
         ],
         ROOT / "inversion",
-        env=env,
+        env=child_env([inversion_src]),
     )
 
     print("\n完成。")

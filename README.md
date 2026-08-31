@@ -14,6 +14,8 @@
 
 ## 快速运行
 
+GUI 详细使用方法见 [自转周期测量 GUI 用户手册](docs/GUI_USER_MANUAL.md)。
+
 ```powershell
 conda activate pytorch
 python pipeline.py --config configs\pipeline_example.json
@@ -29,7 +31,15 @@ python pyside_gui.py
 GUI 会从 `configs/pipeline_example.json` 读取初始参数。点击“执行下一步”会按
 `observation`、`echo`、`inversion` 的顺序逐阶段运行；修改后的参数会保存到
 `.gui_state/pipeline_gui_state.json`，下次打开时自动沿用，并在界面左侧保留最近运行历史。
+执行阶段时，窗口底部会显示当前子模块的粗略百分比进度和正在处理的步骤。
+如果需要放弃当前计算，可以点击“中止”；PySide6 主界面会优先在结果面板中嵌入
+Plotly 交互预览，缺少 Qt WebEngine 时则退回静态图和外部浏览器打开。
 旧版 Tkinter 入口仍保留为 `python gui_app.py`，主要用于回退。
+
+GUI 和 `pipeline.py` 使用同一套配置生成规则：运行前会先在
+`runs/<run-name>/configs/` 生成 `experiment.json`、`observation.generated.json`、
+`echo.generated.json` 和 `inversion.generated.json`，再逐阶段调用各子模块脚本。
+如果运行报错，先看 GUI 日志中的“当前参数来源”和“生成配置”路径。
 
 输出默认写入：
 
