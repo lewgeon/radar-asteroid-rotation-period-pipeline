@@ -8,6 +8,7 @@ import html
 import json
 import os
 import re
+import shutil
 import sys
 import webbrowser
 from pathlib import Path
@@ -131,6 +132,7 @@ def _load_qt_binding():
             QAbstractItemView,
             QCheckBox,
             QComboBox,
+            QDockWidget,
             QFileDialog,
             QFrame,
             QGridLayout,
@@ -161,6 +163,7 @@ def _load_qt_binding():
         QAbstractItemView,
             QCheckBox,
             QComboBox,
+            QDockWidget,
             QFileDialog,
             QFrame,
         QGridLayout,
@@ -209,6 +212,7 @@ PREFERRED = QSizePolicy.Policy.Preferred
 STYLED_PANEL = QFrame.Shape.StyledPanel
 NO_EDIT_TRIGGERS = QAbstractItemView.EditTrigger.NoEditTriggers
 NOT_RUNNING = QProcess.ProcessState.NotRunning
+RIGHT_DOCK = Qt.DockWidgetArea.RightDockWidgetArea
 
 
 ROOT = Path(__file__).resolve().parent
@@ -283,6 +287,8 @@ OPTION_LABELS = {
         "smallbody": "小天体",
         "static": "静态位置",
         "linear": "匀速直线",
+        "cartesian": "直角坐标",
+        "geodetic": "大地坐标",
         "geodetic_fixed": "固定大地坐标",
         "astropy_geodetic": "Astropy 大地坐标",
         "horizons_vectors": "Horizons 星历",
@@ -302,6 +308,8 @@ OPTION_LABELS = {
         "smallbody": "Small Body",
         "static": "Static",
         "linear": "Linear",
+        "cartesian": "Cartesian",
+        "geodetic": "Geodetic",
         "geodetic_fixed": "Geodetic Fixed",
         "astropy_geodetic": "Astropy Geodetic",
         "horizons_vectors": "Horizons Vectors",
@@ -368,12 +376,14 @@ FIELD_LABELS = {
     "lat_deg": "纬度",
     "lon_deg": "经度",
     "height_m": "高度",
+    "geodetic_time_dependent": "随地球自转更新位置",
+    "linear_motion": "进行匀速直线运动",
     "object_type": "目标类型",
     "start_utc": "开始时间",
     "duration_s": "接收时长",
     "sample_rate_hz": "采样率",
     "tolerance_s": "收敛阈值",
-    "max_iter": "最大迭代",
+    "max_iter": "最大迭代次数",
     "location": "参考中心",
     "refplane": "参考平面",
     "padding_s": "星历余量",
@@ -381,10 +391,10 @@ FIELD_LABELS = {
     "query_mode": "查询模式",
     "query_chunk_size": "查询分块",
     "min_query_chunk_size": "最小重试分块",
-    "query_retries": "查询重试",
+    "query_retries": "最大重试次数",
     "cache": "使用缓存",
     "model_path": "形状模型",
-    "seed": "随机种子",
+    "seed": "噪声种子",
     "chunk_size": "计算分块",
     "device": "计算设备",
     "dtype": "浮点精度",
@@ -395,7 +405,7 @@ FIELD_LABELS = {
     "spin_pole_ecliptic_deg": "λ / β",
     "scattering_power": "散射指数",
     "direction_body": "斑块方向",
-    "enabled": "启用",
+    "enabled": "启用散射热点",
     "radius_deg": "斑块半径",
     "strength": "斑块强度",
     "carrier_frequency_hz": "载频",
@@ -424,12 +434,14 @@ FIELD_LABELS_EN = {
     "lat_deg": "Latitude",
     "lon_deg": "Longitude",
     "height_m": "Height",
+    "geodetic_time_dependent": "Update Position with Earth Rotation",
+    "linear_motion": "Use Uniform Linear Motion",
     "object_type": "Object Type",
     "start_utc": "Start UTC",
     "duration_s": "Duration",
     "sample_rate_hz": "Sample Rate",
     "tolerance_s": "Tolerance",
-    "max_iter": "Max Iterations",
+    "max_iter": "Maximum Iterations",
     "location": "Center",
     "refplane": "Reference Plane",
     "padding_s": "Padding",
@@ -437,10 +449,10 @@ FIELD_LABELS_EN = {
     "query_mode": "Query Mode",
     "query_chunk_size": "Query Chunk",
     "min_query_chunk_size": "Min Retry Chunk",
-    "query_retries": "Retries",
+    "query_retries": "Maximum Retries",
     "cache": "Use Cache",
     "model_path": "Shape Model",
-    "seed": "Seed",
+    "seed": "Noise Seed",
     "chunk_size": "Chunk Size",
     "device": "Device",
     "dtype": "Float Type",
@@ -451,7 +463,7 @@ FIELD_LABELS_EN = {
     "spin_pole_ecliptic_deg": "λ / β",
     "scattering_power": "Scattering Power",
     "direction_body": "Spot Direction",
-    "enabled": "Enabled",
+    "enabled": "Enable Scattering Spot",
     "radius_deg": "Spot Radius",
     "strength": "Spot Strength",
     "carrier_frequency_hz": "Carrier Frequency",
@@ -497,7 +509,9 @@ FIELD_UNITS = {
     "period_max_s": "s",
 }
 UNIT_CHOICES = {
+    "duration_s": (("h", 3600.0), ("min", 60.0), ("s", 1.0)),
     "rotation_period_s": (("h", 3600.0), ("s", 1.0)),
+    "initial_phase_deg": (("π rad", 180.0), ("°", 1.0)),
     "period_min_s": (("h", 3600.0), ("s", 1.0)),
     "period_max_s": (("h", 3600.0), ("s", 1.0)),
     "carrier_frequency_hz": (("GHz", 1.0e9), ("MHz", 1.0e6), ("Hz", 1.0)),
@@ -505,6 +519,8 @@ UNIT_CHOICES = {
     "sample_rate_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
 }
 CONTROL_HEIGHT = 32
+EDITABLE_UNIT_WIDTH = 76
+FIXED_UNIT_WIDTH = 44
 GUI_STYLE = """
 QWidget { font-family: "Microsoft YaHei", "Segoe UI"; font-size: 13px; color: #25354a; }
 QMainWindow { background: #f3f5f8; }
@@ -517,8 +533,9 @@ QFrame#parameterCard { background: white; border: 1px solid #dce2eb; border-radi
 QLabel#cardTitle { font-size: 16px; font-weight: 600; color: #193b61;
     background: #eff5fc; border: none; border-left: 3px solid #3979bf;
     border-radius: 3px; padding: 4px 9px; }
-QLabel#subsectionTitle { font-size: 13px; font-weight: 600; color: #526882;
-    border-top: 1px solid #e8edf3; padding-top: 8px; }
+QLabel#subsectionTitle { font-size: 13px; font-weight: 400; color: #25354a; }
+QFrame#subsectionRail { background: transparent; border: none;
+    border-left: 2px solid #d4dfeb; border-radius: 0; }
 QLineEdit, QComboBox { background: white; border: 1px solid #cbd5e1;
     border-radius: 5px; padding: 0 8px; min-height: 30px; selection-background-color: #d9e9fb; }
 QLineEdit:focus, QComboBox:focus { border-color: #3979bf; }
@@ -548,6 +565,10 @@ QProgressBar { border: 1px solid #dce2eb; background: white; border-radius: 4px;
     text-align: center; min-height: 22px; }
 QProgressBar::chunk { background: #b3d2f1; border-radius: 3px; }
 QSplitter::handle { background: #e3e9f0; }
+QDockWidget { background: #f3f5f8; color: #193b61; font-weight: 600;
+    border-left: 1px solid #cbd5e1; }
+QDockWidget::title { background: #eff5fc; border-bottom: 1px solid #cbd5e1;
+    padding: 7px 10px; text-align: left; }
 QScrollBar:vertical { background: #e8edf3; width: 12px; margin: 0; border-radius: 6px; }
 QScrollBar:horizontal { background: #e8edf3; height: 12px; margin: 0; border-radius: 6px; }
 QScrollBar::handle:vertical { background: #71859d; min-height: 32px; border: 2px solid #e8edf3; border-radius: 6px; }
@@ -713,24 +734,20 @@ class ParameterCards(QWidget):
         self.reflow()
 
     def reflow(self):
-        wide = self.width() >= max(1320, self.card_minimum * 3 + self.gap * 2)
-        compact_lanes = {
+        lanes_by_stage = {
             "observation": (("target", "transmitter", "receiver"), ("receive", "ephemeris", "solver")),
-            "echo": (("通用参数", "signal", "compute"), ("target", "scattering_spot")),
+            "echo": (("compute", "radar_parameters"), ("target", "scattering_spot")),
             "inversion": (("spectrum",), ("period_search",)),
         }
-        wide_lanes = {
-            "observation": (("target",), ("transmitter", "receiver"), ("receive", "ephemeris", "solver")),
-            "echo": (("通用参数", "compute"), ("target", "scattering_spot"), ("signal",)),
-            "inversion": (("spectrum",), ("period_search",)),
-        }
-        lanes = (wide_lanes if wide else compact_lanes)[self.stage]
+        lanes = lanes_by_stage[self.stage]
         if self.width() < self.card_minimum * 2 + self.gap:
             lanes = (tuple(name for lane in lanes for name in lane),)
-        self.layout_mode = "wide" if wide else "compact"
+        self.layout_mode = "standard" if len(lanes) > 1 else "narrow"
         self.column_count = len(lanes)
         lane_map = {name: column for column, lane in enumerate(lanes) for name in lane}
-        cards_by_name = {card.property("groupName"): card for card in self.cards}
+        cards_by_name = {
+            card.property("groupName"): card for card in self.cards if not card.isHidden()
+        }
         order = [name for lane in lanes for name in lane if name in cards_by_name]
         order.extend(name for name in cards_by_name if name not in lane_map)
         available = min(self.width() - self.gap * (self.column_count - 1), self.column_count * 620)
@@ -773,8 +790,7 @@ class UnitValueWidget(QWidget):
                 self.unit_combo.addItem(label, factor)
             self.unit_combo.setCurrentText(unit_label)
             self.unit_combo.setObjectName("unitSuffix")
-            longest = max(len(label) for label, _ in unit_options)
-            self.unit_combo.setFixedSize(68 if longest > 2 else 48, CONTROL_HEIGHT - 2)
+            self.unit_combo.setFixedSize(EDITABLE_UNIT_WIDTH, CONTROL_HEIGHT - 2)
             self.unit_combo.setToolTip("切换输入单位 / Select input unit")
             layout.addWidget(self.unit_combo)
             self.unit_suffix = self.unit_combo
@@ -783,7 +799,7 @@ class UnitValueWidget(QWidget):
             unit = QLabel(unit_options[0][0])
             unit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             unit.setObjectName("unitSuffix")
-            unit.setFixedSize(42 if len(unit_options[0][0]) > 2 else 32, CONTROL_HEIGHT - 2)
+            unit.setFixedSize(FIXED_UNIT_WIDTH, CONTROL_HEIGHT - 2)
             unit.setToolTip("固定单位 / Fixed unit")
             layout.addWidget(unit)
             self.unit_suffix = unit
@@ -812,20 +828,17 @@ class VectorValueWidget(QWidget):
     def __init__(self, value, labels: tuple[str, ...], unit: str | None = None):
         super().__init__()
         values = list(value) if isinstance(value, list) else []
-        stacked = len(labels) > 2
-        layout = QVBoxLayout(self) if stacked else QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(14)
         self.edits: list[QLineEdit] = []
         for index, label_text in enumerate(labels):
-            row = QHBoxLayout() if stacked else QVBoxLayout()
+            row = QVBoxLayout()
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(4)
             label = QLabel(label_text)
             label.setObjectName("componentLabel")
             label.setFixedHeight(22)
-            if stacked:
-                label.setFixedWidth(18)
             row.addWidget(label)
             value_widget = UnitValueWidget(
                 values[index] if index < len(values) else 0.0,
@@ -839,10 +852,70 @@ class VectorValueWidget(QWidget):
             row.addWidget(value_widget, 1)
             layout.addLayout(row, 1)
         self.setSizePolicy(EXPANDING, FIXED)
-        self.setFixedHeight(len(labels) * CONTROL_HEIGHT + (len(labels) - 1) * 10 if stacked else CONTROL_HEIGHT + 26)
+        height = len(labels) * (CONTROL_HEIGHT + 26) + (len(labels) - 1) * 14
+        self.setFixedHeight(height)
 
     def value(self):
         return [parse_value(edit.text()) for edit in self.edits]
+
+
+class BooleanFieldWidget(QWidget):
+    """An indicator-only boolean editor aligned with the other field editors."""
+
+    def __init__(self, checked: bool = False):
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.checkbox = QCheckBox()
+        self.checkbox.setChecked(checked)
+        layout.addWidget(self.checkbox)
+        layout.addStretch(1)
+
+        self.setFocusProxy(self.checkbox)
+        self.setFixedHeight(CONTROL_HEIGHT)
+        self.setSizePolicy(EXPANDING, FIXED)
+
+    def isChecked(self) -> bool:
+        return self.checkbox.isChecked()
+
+    def setChecked(self, checked: bool) -> None:
+        self.checkbox.setChecked(checked)
+
+    def value(self) -> bool:
+        return self.isChecked()
+
+    def hasFocus(self) -> bool:
+        return self.checkbox.hasFocus()
+
+
+class SubsectionPanel(QFrame):
+    def __init__(self, title: str, config_path: str | None = None, label_width: int = 84):
+        super().__init__()
+        self.setObjectName("subsectionRail")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.heading = QLabel(title)
+        self.heading.setObjectName("fieldLabel")
+        self.heading.setProperty("configPath", config_path)
+        self.heading.setMinimumWidth(label_width)
+        self.heading.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.content_layout = QVBoxLayout(self)
+        self.content_layout.setContentsMargins(14, 0, 0, 0)
+        self.content_layout.setSpacing(14)
+
+    def add_field(self, label: str, widget: QWidget) -> None:
+        field = QWidget()
+        layout = QVBoxLayout(field)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        field_label = QLabel(label)
+        field_label.setObjectName("componentLabel")
+        field_label.setBuddy(widget)
+        layout.addWidget(field_label)
+        layout.addWidget(widget)
+        self.content_layout.addWidget(field)
+
+    def add_widget(self, widget: QWidget) -> None:
+        self.content_layout.addWidget(widget)
 
 
 class DirectionBodyWidget(VectorValueWidget):
@@ -885,8 +958,15 @@ class PipelineWindow(QMainWindow):
         self.stage_status = {stage: "待执行" for stage in STAGES}
         self.language = "zh"
         self.field_widgets: dict[str, QWidget] = {}
-        self.monostatic_observation = self._is_monostatic_observation()
+        self.monostatic_observation = False
         self.monostatic_checkbox: QCheckBox | None = None
+        gui_state = read_json(STATE_PATH, {})
+        self.reuse_observation_info = bool(gui_state.get("reuse_observation_info", False))
+        self.reuse_observation_path = str(gui_state.get("reuse_observation_path", ""))
+        self.reuse_observation_checkbox: QCheckBox | None = None
+        self.reuse_observation_edit: QLineEdit | None = None
+        self.export_observation_btn: QPushButton | None = None
+        self.latest_observation_path: Path | None = None
         self.latest_image_path: Path | None = None
         self.latest_result_path: Path | None = None
         self.latest_plotly_path: Path | None = None
@@ -986,10 +1066,13 @@ class PipelineWindow(QMainWindow):
         save_as_btn.clicked.connect(self._save_config_as_json)
         self.save_btn = save_btn
         self.save_as_btn = save_as_btn
+        self.preview_toggle_btn = QPushButton("显示结果侧栏")
+        self.preview_toggle_btn.setCheckable(True)
         sidebar_layout.addWidget(self.next_btn)
         sidebar_layout.addWidget(self.stop_btn)
         sidebar_layout.addWidget(save_btn)
         sidebar_layout.addWidget(save_as_btn)
+        sidebar_layout.addWidget(self.preview_toggle_btn)
 
         self.history_table = QTableWidget(0, 3)
         self.history_table.setHorizontalHeaderLabels(("时间", "阶段", "状态"))
@@ -1034,25 +1117,26 @@ class PipelineWindow(QMainWindow):
         params_outer.addWidget(self.params_scroll)
         work_splitter.addWidget(self.params_group)
 
-        bottom_splitter = QSplitter(HORIZONTAL)
-        self.bottom_splitter = bottom_splitter
-        bottom_splitter.setChildrenCollapsible(False)
-        work_splitter.addWidget(bottom_splitter)
+        work_splitter.addWidget(log_group := QGroupBox("执行日志"))
         work_splitter.setSizes((590, 230))
         work_splitter.setStretchFactor(0, 3)
         work_splitter.setStretchFactor(1, 1)
 
-        log_group = QGroupBox("执行日志")
         self.log_group = log_group
         log_layout = QVBoxLayout(log_group)
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
         log_layout.addWidget(self.log_edit)
-        bottom_splitter.addWidget(log_group)
-
-        result_group = QGroupBox("结果预览")
-        self.result_group = result_group
-        result_layout = QVBoxLayout(result_group)
+        self.result_dock = QDockWidget("结果预览", self)
+        self.result_dock.setObjectName("resultDock")
+        self.result_dock.setAllowedAreas(RIGHT_DOCK)
+        self.result_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        result_panel = QWidget()
+        result_layout = QVBoxLayout(result_panel)
         result_head = QHBoxLayout()
         self.result_status = QLabel("执行阶段后会在这里显示关键结果。")
         self.result_status.setWordWrap(True)
@@ -1072,8 +1156,11 @@ class PipelineWindow(QMainWindow):
         if self.web_preview:
             result_layout.addWidget(self.web_preview, 1)
             self.web_preview.hide()
-        bottom_splitter.addWidget(result_group)
-        bottom_splitter.setSizes((650, 430))
+        self.result_dock.setWidget(result_panel)
+        self.addDockWidget(RIGHT_DOCK, self.result_dock)
+        self.preview_toggle_btn.toggled.connect(self.result_dock.setVisible)
+        self.result_dock.visibilityChanged.connect(self._on_result_dock_visibility_changed)
+        self.result_dock.hide()
 
         progress_row = QHBoxLayout()
         self.status_label = QLabel("就绪")
@@ -1086,6 +1173,16 @@ class PipelineWindow(QMainWindow):
         root_layout.addLayout(progress_row)
         self._apply_language()
         self._workspace_layout_timer.start(0)
+
+    def _on_result_dock_visibility_changed(self, visible: bool) -> None:
+        self.preview_toggle_btn.blockSignals(True)
+        self.preview_toggle_btn.setChecked(visible)
+        self.preview_toggle_btn.setText(
+            self._tr("隐藏结果侧栏", "Hide Result Sidebar")
+            if visible
+            else self._tr("显示结果侧栏", "Show Result Sidebar")
+        )
+        self.preview_toggle_btn.blockSignals(False)
 
     def _adapt_workspace(self):
         """Rebalance only on stage/breakpoint changes; preserve manual splitter drags."""
@@ -1102,9 +1199,6 @@ class PipelineWindow(QMainWindow):
         else:
             parameter_height = int(height * (0.68 if mode == "wide" else 0.72))
         self.work_splitter.setSizes((parameter_height, height - parameter_height))
-        width = self.bottom_splitter.width()
-        log_share = 0.34 if mode == "wide" else 0.5
-        self.bottom_splitter.setSizes((int(width * log_share), int(width * (1 - log_share))))
 
     def _tr(self, zh: str, en: str) -> str:
         return zh if self.language == "zh" else en
@@ -1160,9 +1254,10 @@ class PipelineWindow(QMainWindow):
         )
         self.params_group.setTitle(f"{self._stage_label(self.current_stage)} {self._tr('参数', 'Parameters')}")
         self.log_group.setTitle(self._tr("执行日志", "Log"))
-        self.result_group.setTitle(self._tr("结果预览", "Preview"))
+        self.result_dock.setWindowTitle(self._tr("结果预览", "Preview"))
         self.open_result_btn.setText(self._tr("打开结果", "Open Result"))
         self.open_3d_btn.setText(self._tr("打开 3D", "Open 3D"))
+        self._on_result_dock_visibility_changed(self.result_dock.isVisible())
         if self.process is None:
             self.status_label.setText(self._tr("就绪", "Ready"))
             self.progress_bar.setFormat(self._tr("就绪", "Ready"))
@@ -1183,18 +1278,26 @@ class PipelineWindow(QMainWindow):
             if widget:
                 widget.hide()
                 widget.deleteLater()
+        self.stage_buttons = {}
         for stage in STAGES:
             btn = QPushButton(f"{self._stage_label(stage)}  {self._status_text(self.stage_status[stage])}")
             btn.setProperty("activeStage", stage == self.current_stage)
             btn.clicked.connect(lambda _checked=False, value=stage: self._select_stage(value))
             self.stage_layout.addWidget(btn)
+            self.stage_buttons[stage] = btn
         self.stage_layout.addStretch(1)
 
     def _render_current_stage(self) -> None:
         self._migrate_config()
+        # These controls only exist on the observation page. Their C++ objects
+        # are destroyed when the parameter page is rebuilt, so never retain a
+        # Python reference across stages.
+        self.monostatic_checkbox = None
+        self.reuse_observation_checkbox = None
+        self.reuse_observation_edit = None
+        self.export_observation_btn = None
         self._clear_layout(self.params_layout)
         self.field_widgets.clear()
-        self.monostatic_checkbox = None
         self.params_group.setTitle(f"{self._stage_label(self.current_stage)} {self._tr('参数', 'Parameters')}")
         if self.current_stage == "observation":
             self.monostatic_checkbox = QCheckBox(
@@ -1203,6 +1306,29 @@ class PipelineWindow(QMainWindow):
             self.monostatic_checkbox.setChecked(self.monostatic_observation)
             self.monostatic_checkbox.toggled.connect(self._on_monostatic_toggled)
             self.params_layout.addWidget(self.monostatic_checkbox)
+            reuse_row = QHBoxLayout()
+            self.reuse_observation_checkbox = QCheckBox(
+                self._tr("复用已有视线向量", "Reuse Existing Line-of-Sight Vectors")
+            )
+            self.reuse_observation_checkbox.setChecked(self.reuse_observation_info)
+            self.reuse_observation_checkbox.toggled.connect(self._on_reuse_observation_toggled)
+            self.reuse_observation_edit = QLineEdit(self.reuse_observation_path)
+            self.reuse_observation_edit.setPlaceholderText(
+                self._tr("选择 observation_info.npz", "Select observation_info.npz")
+            )
+            self.reuse_observation_edit.textChanged.connect(self._on_reuse_observation_path_changed)
+            browse_reuse_btn = QPushButton(self._tr("选择", "Browse"))
+            browse_reuse_btn.clicked.connect(self._choose_observation_info)
+            self.export_observation_btn = QPushButton(self._tr("另存当前向量", "Save Current Vectors As"))
+            self.export_observation_btn.clicked.connect(self._export_observation_info)
+            reusable = bool(self.latest_observation_path and self.latest_observation_path.exists())
+            self.export_observation_btn.setEnabled(reusable)
+            reuse_row.addWidget(self.reuse_observation_checkbox)
+            reuse_row.addWidget(self.reuse_observation_edit, 1)
+            reuse_row.addWidget(browse_reuse_btn)
+            reuse_row.addWidget(self.export_observation_btn)
+            self.params_layout.addLayout(reuse_row)
+            self._on_reuse_observation_toggled(self.reuse_observation_info)
         stage_data = self.config_data.get(self.current_stage, {})
         self._render_stage_group_boxes(self._stage_groups(stage_data))
         self.params_layout.addStretch(1)
@@ -1215,9 +1341,13 @@ class PipelineWindow(QMainWindow):
                 path = relative_path if group_name == "通用参数" else f"{group_name}.{relative_path}"
                 section = group_name
                 if self.current_stage == "echo":
-                    if group_name in {"radar", "waveform"}:
-                        section = "signal"
-                    elif path in {"seed", "chunk_size"}:
+                    if path == "model_path":
+                        section = "target"
+                    elif path == "scattering_power":
+                        section = "scattering_spot"
+                    elif group_name in {"radar", "waveform"} or path in {"snr_db", "seed"}:
+                        section = "radar_parameters"
+                    elif path == "chunk_size":
                         section = "compute"
                 elif self.current_stage == "inversion" and group_name == "通用参数":
                     if path.startswith("stft_"):
@@ -1226,25 +1356,43 @@ class PipelineWindow(QMainWindow):
                         section = "period_search"
                 sections.setdefault(section, []).append((path, value))
         if self.current_stage == "echo":
-            order = ("通用参数", "target", "signal", "scattering_spot", "compute")
+            order = ("compute", "radar_parameters", "target", "scattering_spot")
         elif self.current_stage == "observation":
             order = ("receive", "target", "transmitter", "receiver", "ephemeris", "solver")
         else:
             order = ("spectrum", "period_search")
         names = sorted(sections, key=lambda name: order.index(name) if name in order else len(order))
-        cards = [self._create_group_box(name, sections[name]) for name in names]
+        if self.current_stage == "echo":
+            field_order = (
+                "compute.device", "compute.dtype", "chunk_size",
+                "radar.carrier_frequency_hz", "waveform.type", "waveform.amplitude",
+                "waveform.pulse_width_s", "waveform.bandwidth_hz", "waveform.pri_s",
+                "waveform.first_pulse_start_s", "waveform.pulse_count", "waveform.pulse_start_s",
+                "snr_db", "seed", "model_path", "target.rotation_period_s",
+                "target.initial_phase_deg", "target.spin_pole_frame", "target.spin_pole_icrs_deg",
+                "target.spin_pole_ecliptic_deg", "scattering_power", "scattering_spot.enabled",
+                "scattering_spot.direction_body", "scattering_spot.radius_deg", "scattering_spot.strength",
+            )
+            priorities = {path: index for index, path in enumerate(field_order)}
+            for fields in sections.values():
+                fields.sort(key=lambda item: priorities.get(item[0], len(priorities)))
+        cards = [self._create_group_box(name, sections[name]) for name in names if sections[name]]
+        if self.current_stage == "observation" and self.monostatic_observation:
+            for card in cards:
+                if card.property("groupName") == "receiver":
+                    card.hide()
         self.parameter_cards = ParameterCards(cards, self.current_stage, lambda: self._workspace_layout_timer.start(0))
         self.params_layout.addWidget(self.parameter_cards)
 
     def _create_group_box(self, group_name: str, fields) -> QFrame:
         titles = {
-            "signal": self._tr("雷达与波形", "Radar & Waveform"),
+            "radar_parameters": self._tr("雷达参数", "Radar Parameters"),
             "spectrum": self._tr("时频分析", "Time–Frequency Analysis"),
             "period_search": self._tr("周期搜索", "Period Search"),
         }
         title = titles.get(group_name, self._group_label(group_name))
-        if self.current_stage == "echo" and group_name == "通用参数":
-            title = self._tr("模型与散射", "Model & Scattering")
+        if self.current_stage == "echo" and group_name == "scattering_spot":
+            title = self._tr("散射特性", "Scattering Properties")
         group = QFrame()
         group.setObjectName("parameterCard")
         group.setProperty("groupName", group_name)
@@ -1257,7 +1405,7 @@ class PipelineWindow(QMainWindow):
         outer.addWidget(header)
         grid = QGridLayout()
         grid.setHorizontalSpacing(14)
-        grid.setVerticalSpacing(10)
+        grid.setVerticalSpacing(14)
         self._render_group_fields(grid, group_name, fields)
         outer.addLayout(grid)
         group.setSizePolicy(EXPANDING, FIXED)
@@ -1267,8 +1415,6 @@ class PipelineWindow(QMainWindow):
         groups = []
         loose = {}
         for key, value in stage_data.items():
-            if self.current_stage == "observation" and self.monostatic_observation and key == "receiver":
-                continue
             if isinstance(value, dict):
                 groups.append((key, value))
             else:
@@ -1280,16 +1426,39 @@ class PipelineWindow(QMainWindow):
 
     def _render_group_fields(self, grid: QGridLayout, group_name: str, fields) -> None:
         row = 0
-        spin_header_added = False
+        label_width = 84 if self.language == "zh" else 120
+        field_values = dict(fields)
+        spin_values = {path: value for path, value in fields if path.startswith("target.spin_pole_")}
+        handled: set[str] = set()
         for full_path, value in fields:
+            if full_path in handled:
+                continue
             key = full_path.split(".")[-1]
-            is_spin = full_path.startswith("target.spin_pole_")
-            if is_spin and not spin_header_added:
-                header = QLabel(self._tr("自转轴", "Spin Axis"))
-                header.setObjectName("subsectionTitle")
-                grid.addWidget(header, row, 0, 1, 2)
-                row += 1
-                spin_header_added = True
+            if full_path == "target.spin_pole_frame":
+                coord_path = next(
+                    (path for path in ("target.spin_pole_icrs_deg", "target.spin_pole_ecliptic_deg") if path in spin_values),
+                    None,
+                )
+                if coord_path:
+                    section = SubsectionPanel(
+                        self._tr("自转轴", "Spin Axis"), "target.spin_pole", label_width
+                    )
+                    frame_widget = self._field_widget(full_path, value)
+                    frame_widget.setToolTip(full_path)
+                    frame_widget.setAccessibleName(self._display_label(full_path))
+                    section.add_field(self._display_label(full_path), frame_widget)
+
+                    coord_widget = self._field_widget(coord_path, spin_values[coord_path])
+                    coord_widget.setToolTip(coord_path)
+                    coord_widget.setAccessibleName(self._display_label(coord_path))
+                    section.add_widget(coord_widget)
+                    self.field_widgets[full_path] = frame_widget
+                    self.field_widgets[coord_path] = coord_widget
+                    handled.update({full_path, coord_path})
+                    grid.addWidget(section.heading, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+                    grid.addWidget(section, row, 1)
+                    row += 1
+                    continue
             label = QLabel(self._display_label(full_path))
             label.setObjectName("fieldLabel")
             label.setProperty("configPath", full_path)
@@ -1298,13 +1467,16 @@ class PipelineWindow(QMainWindow):
             widget.setAccessibleName(self._display_label(full_path))
             label.setBuddy(widget)
             self.field_widgets[full_path] = widget
-            if isinstance(widget, VectorValueWidget):
-                if not is_spin:
-                    grid.addWidget(label, row, 0, 1, 2)
-                    row += 1
-                else:
-                    label.deleteLater()
-                grid.addWidget(widget, row, 0, 1, 2)
+            if isinstance(widget, BooleanFieldWidget):
+                self._add_boolean_row(grid, row, label, widget, label_width)
+                row += 1
+            elif isinstance(widget, VectorValueWidget):
+                section = SubsectionPanel(self._display_label(full_path), full_path, label_width)
+                section.heading.setBuddy(widget)
+                section.add_widget(widget)
+                label.deleteLater()
+                grid.addWidget(section.heading, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+                grid.addWidget(section, row, 1)
                 row += 1
             elif key in {"model_path", "observation_info_path", "pulse_start_s", "start_utc"}:
                 grid.addWidget(label, row, 0, 1, 2)
@@ -1315,14 +1487,154 @@ class PipelineWindow(QMainWindow):
                 grid.addWidget(label, row, 0)
                 grid.addWidget(widget, row, 1)
                 row += 1
+                if (
+                    key == "state"
+                    and self.current_stage == "observation"
+                    and group_name in {"transmitter", "receiver"}
+                ):
+                    row = self._render_station_state_children(
+                        grid, row, group_name, str(value), field_values, handled, label_width
+                    )
         grid.setColumnStretch(1, 1)
+
+    def _add_boolean_row(
+        self,
+        grid: QGridLayout,
+        row: int,
+        label: QLabel,
+        widget: BooleanFieldWidget,
+        label_width: int,
+    ) -> None:
+        """Align short booleans with editors; keep long labels intact and inline."""
+
+        label.setBuddy(widget)
+        if label.sizeHint().width() <= label_width:
+            label.setMinimumWidth(label_width)
+            grid.addWidget(label, row, 0)
+            grid.addWidget(widget, row, 1)
+            return
+
+        inline = QWidget()
+        inline_layout = QHBoxLayout(inline)
+        inline_layout.setContentsMargins(0, 0, 0, 0)
+        inline_layout.setSpacing(8)
+        inline_layout.addWidget(label)
+        inline_layout.addWidget(widget)
+        inline_layout.addStretch(1)
+        inline.setFixedHeight(CONTROL_HEIGHT)
+        inline.setSizePolicy(EXPANDING, FIXED)
+        grid.addWidget(inline, row, 0, 1, 2)
+
+    def _render_station_state_children(
+        self,
+        grid: QGridLayout,
+        row: int,
+        group_name: str,
+        state: str,
+        field_values: dict,
+        handled: set[str],
+        label_width: int,
+    ) -> int:
+        for state_fields in STATE_FIELDS.values():
+            for child_key in state_fields:
+                if child_key not in {"id", "object_type"}:
+                    handled.add(f"{group_name}.{child_key}")
+        geodetic = state in {"geodetic_fixed", "astropy_geodetic"}
+        initial_title = self._tr("初始坐标", "Initial Coordinates")
+        if geodetic:
+            initial_path = f"{group_name}.initial_geodetic_coordinates"
+            initial = SubsectionPanel(initial_title, initial_path, label_width)
+            for child_key in ("lon_deg", "lat_deg", "height_m"):
+                child_path = f"{group_name}.{child_key}"
+                child_widget = self._field_widget(
+                    child_path, field_values.get(child_path, STATE_DEFAULTS[child_key])
+                )
+                child_widget.setToolTip(child_path)
+                child_widget.setAccessibleName(self._display_label(child_path))
+                initial.add_field(self._display_label(child_path), child_widget)
+                self.field_widgets[child_path] = child_widget
+                handled.add(child_path)
+            grid.addWidget(initial.heading, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+            grid.addWidget(initial, row, 1)
+            row += 1
+            toggle_path = f"{group_name}.geodetic_time_dependent"
+            toggle_value = state == "astropy_geodetic"
+            toggle_tooltip = self._tr(
+                "开启后按每个事件时刻计算测站在 GCRS 中的位置",
+                "Compute the station GCRS position at each event time when enabled",
+            )
+        else:
+            position_key = "position0_m" if state == "linear" else "position_m"
+            position_path = f"{group_name}.{position_key}"
+            position_widget = self._field_widget(
+                position_path, field_values.get(position_path, STATE_DEFAULTS[position_key])
+            )
+            position_widget.setToolTip(position_path)
+            position_widget.setAccessibleName(initial_title)
+            initial = SubsectionPanel(initial_title, position_path, label_width)
+            initial.heading.setBuddy(position_widget)
+            initial.add_widget(position_widget)
+            self.field_widgets[position_path] = position_widget
+            handled.add(position_path)
+            grid.addWidget(initial.heading, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+            grid.addWidget(initial, row, 1)
+            row += 1
+            toggle_path = f"{group_name}.linear_motion"
+            toggle_value = state == "linear"
+            toggle_tooltip = self._tr(
+                "开启后使用初始坐标和速度进行匀速直线运动",
+                "Use the initial coordinates and velocity for uniform linear motion",
+            )
+
+        toggle_widget = self._field_widget(toggle_path, toggle_value)
+        toggle_widget.setToolTip(toggle_tooltip)
+        toggle_widget.setAccessibleName(self._display_label(toggle_path))
+        self.field_widgets[toggle_path] = toggle_widget
+        toggle_label = QLabel(self._display_label(toggle_path))
+        toggle_label.setObjectName("fieldLabel")
+        toggle_label.setProperty("configPath", toggle_path)
+        self._add_boolean_row(grid, row, toggle_label, toggle_widget, label_width)
+        row += 1
+
+        if state == "linear":
+            velocity_path = f"{group_name}.velocity_m_s"
+            velocity_widget = self._field_widget(
+                velocity_path, field_values.get(velocity_path, STATE_DEFAULTS["velocity_m_s"])
+            )
+            velocity_widget.setToolTip(velocity_path)
+            velocity_widget.setAccessibleName(self._display_label(velocity_path))
+            velocity = SubsectionPanel(
+                self._display_label(velocity_path), velocity_path, label_width
+            )
+            velocity.heading.setBuddy(velocity_widget)
+            velocity.add_widget(velocity_widget)
+            self.field_widgets[velocity_path] = velocity_widget
+            handled.add(velocity_path)
+            grid.addWidget(velocity.heading, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
+            grid.addWidget(velocity, row, 1)
+            row += 1
+        return row
 
     def _field_widget(self, full_path: str, value):
         key = full_path.split(".")[-1]
-        if key in CHOICES or isinstance(value, bool):
+        if isinstance(value, bool):
+            checkbox = BooleanFieldWidget(value)
+            if full_path == "scattering_spot.enabled":
+                checkbox.checkbox.toggled.connect(lambda _checked: self._on_spot_enabled_changed())
+            if full_path.endswith(".linear_motion"):
+                checkbox.checkbox.toggled.connect(
+                    lambda _checked, path=full_path: self._on_station_motion_changed(path)
+                )
+            return checkbox
+        if key in CHOICES:
             combo = NoWheelComboBox()
-            choices = (True, False) if isinstance(value, bool) else self._choices_for_field(full_path)
-            current = "true" if value is True else "false" if value is False else format_value(value)
+            choices = self._choices_for_field(full_path)
+            current = format_value(value)
+            if key == "state" and full_path.split(".", 1)[0] in {"transmitter", "receiver"}:
+                if current in {"geodetic_fixed", "astropy_geodetic"}:
+                    current = "geodetic"
+                elif current in {"static", "linear"}:
+                    current = "cartesian"
             for item in choices:
                 data = "true" if item is True else "false" if item is False else str(item)
                 combo.addItem(self._option_label(data), data)
@@ -1339,8 +1651,6 @@ class PipelineWindow(QMainWindow):
                 combo.currentTextChanged.connect(lambda _text, path=full_path: self._on_spin_pole_frame_changed(path))
             if full_path == "waveform.type":
                 combo.currentTextChanged.connect(lambda _text: self._on_waveform_type_changed())
-            if full_path == "scattering_spot.enabled":
-                combo.currentTextChanged.connect(lambda _text: self._on_spot_enabled_changed())
             self._apply_field_width(combo, full_path, value)
             return combo
 
@@ -1391,6 +1701,8 @@ class PipelineWindow(QMainWindow):
         return None
 
     def _display_label(self, relative_path: str) -> str:
+        if relative_path in {"transmitter.state", "receiver.state"}:
+            return self._tr("坐标格式", "Coordinate Format")
         key = relative_path.split(".")[-1]
         labels = FIELD_LABELS if self.language == "zh" else FIELD_LABELS_EN
         return labels.get(key, key)
@@ -1403,7 +1715,7 @@ class PipelineWindow(QMainWindow):
         if self.current_stage == "observation" and group_name == "target":
             return ("linear", "static", "horizons_vectors")
         if self.current_stage == "observation" and group_name in {"transmitter", "receiver"}:
-            return ("static", "geodetic_fixed", "astropy_geodetic", "linear")
+            return ("cartesian", "geodetic")
         return CHOICES[key]
 
     def _is_monostatic_observation(self) -> bool:
@@ -1422,6 +1734,71 @@ class PipelineWindow(QMainWindow):
             self._apply_monostatic_receiver()
         self._save_state()
         self._render_current_stage()
+        if self.monostatic_checkbox:
+            self.monostatic_checkbox.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.config_path_edit.deselect()
+
+    def _on_reuse_observation_toggled(self, checked: bool) -> None:
+        self.reuse_observation_info = bool(checked)
+        if self.reuse_observation_edit:
+            self.reuse_observation_edit.setEnabled(checked)
+        self._save_state()
+
+    def _on_reuse_observation_path_changed(self, path: str) -> None:
+        self.reuse_observation_path = path.strip()
+
+    def _choose_observation_info(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            self._tr("选择视线向量文件", "Select Line-of-Sight Vector File"),
+            str(ROOT / "runs"),
+            "NumPy (*.npz);;All Files (*)",
+        )
+        if not filename:
+            return
+        try:
+            self._validate_observation_info(Path(filename))
+        except Exception as exc:
+            QMessageBox.critical(self, self._tr("文件无效", "Invalid File"), str(exc))
+            return
+        self.reuse_observation_path = filename
+        self.reuse_observation_info = True
+        if self.reuse_observation_edit:
+            self.reuse_observation_edit.setText(filename)
+        if self.reuse_observation_checkbox:
+            self.reuse_observation_checkbox.setChecked(True)
+        self._save_state()
+
+    @staticmethod
+    def _validate_observation_info(path: Path) -> None:
+        required = {
+            "start_utc", "elapsed_s", "scatter_elapsed_s", "emit_elapsed_s",
+            "tx_los_icrs", "rx_los_icrs", "tx_range_m", "rx_range_m",
+        }
+        if not path.is_file():
+            raise FileNotFoundError(f"视线向量文件不存在：{path}")
+        with np.load(path, allow_pickle=False) as data:
+            missing = sorted(required.difference(data.files))
+            if missing:
+                raise ValueError(f"视线向量文件缺少字段：{missing}")
+            length = len(data["elapsed_s"])
+            if length < 1 or any(len(data[key]) != length for key in required - {"start_utc"}):
+                raise ValueError("视线向量文件字段长度不一致或时间轴为空")
+
+    def _export_observation_info(self) -> None:
+        source = self.latest_observation_path
+        if not source or not source.exists():
+            QMessageBox.information(self, self._tr("没有结果", "No Result"), self._tr("请先完成观测解算。", "Run observation first."))
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            self._tr("另存视线向量", "Save Line-of-Sight Vectors As"),
+            str(ROOT / "runs" / "observation_info.npz"),
+            "NumPy (*.npz)",
+        )
+        if filename:
+            shutil.copy2(source, filename)
+            self._append_log(f"[{now_text()}] 视线向量已另存为：{filename}")
 
     def _apply_monostatic_receiver(self) -> None:
         observation = self.config_data.setdefault("observation", {})
@@ -1526,6 +1903,14 @@ class PipelineWindow(QMainWindow):
         self.current_stage = stage
         self._render_stage_buttons()
         self._render_current_stage()
+        self.stage_buttons[stage].setFocus(Qt.FocusReason.OtherFocusReason)
+        self.config_path_edit.deselect()
+
+    def _focus_rebuilt_field(self, full_path: str) -> None:
+        widget = self.field_widgets.get(full_path)
+        if widget is not None:
+            widget.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.config_path_edit.deselect()
 
     def _on_state_changed(self, full_path: str) -> None:
         self._sync_stage_from_fields()
@@ -1539,6 +1924,7 @@ class PipelineWindow(QMainWindow):
         self.config_data[self.current_stage][group_name] = self._normalize_state_group(group)
         self._save_state()
         self._render_current_stage()
+        self._focus_rebuilt_field(full_path)
 
     def _on_spin_pole_frame_changed(self, full_path: str) -> None:
         self._sync_stage_from_fields()
@@ -1553,6 +1939,7 @@ class PipelineWindow(QMainWindow):
             target.setdefault("spin_pole_icrs_deg", copy.deepcopy(target.get("spin_pole_ecliptic_deg", [0.0, 90.0])))
         self._save_state()
         self._render_current_stage()
+        self._focus_rebuilt_field(full_path)
 
     def _on_waveform_type_changed(self) -> None:
         self._sync_stage_from_fields()
@@ -1566,6 +1953,7 @@ class PipelineWindow(QMainWindow):
             waveform.setdefault("first_pulse_start_s", 0.0)
         self._save_state()
         self._render_current_stage()
+        self._focus_rebuilt_field("waveform.type")
 
     def _on_spot_enabled_changed(self) -> None:
         self._sync_stage_from_fields()
@@ -1575,6 +1963,17 @@ class PipelineWindow(QMainWindow):
                 spot.setdefault(key, copy.deepcopy(value))
         self._save_state()
         self._render_current_stage()
+        self._focus_rebuilt_field("scattering_spot.enabled")
+
+    def _on_station_motion_changed(self, full_path: str) -> None:
+        self._sync_stage_from_fields()
+        group_name = full_path.split(".", 1)[0]
+        group = self.config_data.get("observation", {}).get(group_name)
+        if isinstance(group, dict):
+            self.config_data["observation"][group_name] = self._normalize_state_group(group)
+        self._save_state()
+        self._render_current_stage()
+        self._focus_rebuilt_field(full_path)
 
     def _normalize_state_group(self, group: dict) -> dict:
         state = group.get("state", "static")
@@ -1612,16 +2011,37 @@ class PipelineWindow(QMainWindow):
     def _sync_stage_from_fields(self) -> None:
         existing = self.config_data.get(self.current_stage, {})
         stage_payload = copy.deepcopy(existing) if isinstance(existing, dict) else {}
+        geodetic_rotation: dict[str, bool] = {}
+        linear_motion: dict[str, bool] = {}
         for path, widget in self.field_widgets.items():
             if hasattr(widget, "value"):
                 value = widget.value()
+            elif isinstance(widget, (QCheckBox, BooleanFieldWidget)):
+                value = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 data = widget.currentData()
                 text = widget.currentText() if data is None else str(data)
                 value = parse_value(text)
             else:
                 value = parse_value(widget.text())
+            if path.endswith(".geodetic_time_dependent"):
+                geodetic_rotation[path.split(".", 1)[0]] = bool(value)
+                continue
+            if path.endswith(".linear_motion"):
+                linear_motion[path.split(".", 1)[0]] = bool(value)
+                continue
             assign_path(stage_payload, path, value)
+        if self.current_stage == "observation":
+            for role in ("transmitter", "receiver"):
+                group = stage_payload.get(role)
+                if not isinstance(group, dict):
+                    continue
+                if group.get("state") == "geodetic":
+                    group["state"] = (
+                        "astropy_geodetic" if geodetic_rotation.get(role, True) else "geodetic_fixed"
+                    )
+                elif group.get("state") == "cartesian":
+                    group["state"] = "linear" if linear_motion.get(role, False) else "static"
         self.config_data[self.current_stage] = stage_payload
         if self.current_stage == "observation" and self.monostatic_observation:
             self._apply_monostatic_receiver()
@@ -1673,6 +2093,8 @@ class PipelineWindow(QMainWindow):
             {
                 "config_path": str(self.config_path),
                 "config": self.config_data,
+                "reuse_observation_info": self.reuse_observation_info,
+                "reuse_observation_path": self.reuse_observation_path,
                 "saved_at": now_text(),
             },
         )
@@ -1701,7 +2123,9 @@ class PipelineWindow(QMainWindow):
         self.config_path = path
         self.config_data = data
         self._migrate_config()
-        self.monostatic_observation = self._is_monostatic_observation()
+        self.monostatic_observation = False
+        self.reuse_observation_info = False
+        self.reuse_observation_path = ""
         self.run_name_edit.setText(path.stem)
         self.current_stage = STAGES[0]
         self.stage_status = {stage: "待执行" for stage in STAGES}
@@ -1773,12 +2197,23 @@ class PipelineWindow(QMainWindow):
             return
 
         stage = self.current_stage
+        if stage == "observation" and self.reuse_observation_info:
+            self._complete_reused_observation()
+            return
         run_name = self.run_name_edit.text().strip() or self.config_path.stem
         runs_dir = self.runs_dir_edit.text().strip() or "runs"
         python_exe = self.python_edit.text().strip() or sys.executable
         run_dir = pipeline.abs_path(runs_dir) / run_name
         config_dir = run_dir / "configs"
         prepared = pipeline.prepared_configs(self.config_data, run_dir)
+        if self.reuse_observation_info and self.reuse_observation_path:
+            source = Path(self.reuse_observation_path).expanduser().resolve()
+            try:
+                self._validate_observation_info(source)
+            except Exception as exc:
+                QMessageBox.critical(self, self._tr("无法复用", "Cannot Reuse"), str(exc))
+                return
+            prepared["echo"]["observation_info_path"] = str(source)
         write_json(config_dir / "experiment.json", self.config_data)
         write_json(config_dir / "observation.generated.json", prepared["observation"])
         write_json(config_dir / "echo.generated.json", prepared["echo"])
@@ -1820,6 +2255,28 @@ class PipelineWindow(QMainWindow):
         self.process.readyReadStandardError.connect(self._read_process_output)
         self.process.finished.connect(self._process_finished)
         self.process.start(str(command[0]), [str(item) for item in command[1:]])
+
+    def _complete_reused_observation(self) -> None:
+        source = Path(self.reuse_observation_path).expanduser()
+        if not source.is_absolute():
+            source = ROOT / source
+        try:
+            self._validate_observation_info(source)
+        except Exception as exc:
+            QMessageBox.critical(self, self._tr("无法复用", "Cannot Reuse"), str(exc))
+            return
+        self.reuse_observation_path = str(source.resolve())
+        self.latest_observation_path = source.resolve()
+        self.stage_status["observation"] = "完成"
+        self._append_history("observation", "复用", str(source), "")
+        self._append_log(f"[{now_text()}] 已复用视线向量：{source}")
+        self._set_progress("observation", 100, self._tr("已复用已有结果", "Reused existing result"))
+        self.current_stage = "echo"
+        self.status_label.setText(self._tr("视线向量已载入，已切换到回波仿真。", "Vectors loaded; switched to echo simulation."))
+        self._save_state()
+        self._render_stage_buttons()
+        self._render_current_stage()
+        self._render_history()
 
     def _stop_current_stage(self) -> None:
         if not self.process or self.process.state() == NOT_RUNNING:
@@ -2030,6 +2487,8 @@ class PipelineWindow(QMainWindow):
         self.stop_requested = False
 
     def _update_result_preview(self, stage: str, run_dir: Path) -> None:
+        self.result_dock.show()
+        self.result_dock.raise_()
         try:
             image_path, result_path, plotly_path, message = self._create_stage_preview(stage, run_dir)
         except Exception as exc:
@@ -2042,6 +2501,8 @@ class PipelineWindow(QMainWindow):
             return
         self.latest_image_path = image_path
         self.latest_result_path = result_path
+        if stage == "observation":
+            self.latest_observation_path = Path(result_path)
         self.latest_plotly_path = plotly_path
         self.open_result_btn.setEnabled(bool(result_path))
         self.open_3d_btn.setEnabled(bool(plotly_path))
@@ -2247,6 +2708,7 @@ class PipelineWindow(QMainWindow):
             widget = item.widget()
             child_layout = item.layout()
             if widget:
+                widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
             if child_layout:

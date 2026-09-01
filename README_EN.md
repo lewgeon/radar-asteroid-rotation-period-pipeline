@@ -38,18 +38,24 @@ browser opening kept as fallback.
 The older Tkinter entry point remains available as `python gui_app.py` for fallback.
 
 The PySide6 parameter editor uses content-height cards in stable semantic lanes.
-In compact observation windows, target/transmitter/receiver stay on the left and
+In observation windows, target/transmitter/receiver stay on the left and
 receive/ephemeris/solver stay on the right. Monostatic mode only hides the receiver.
-Wide screens use target, stations, and observation/solver lanes, with a separate
-three-lane echo layout; inversion gives more space to results. Value and compact
+Maximized windows keep the same two module lanes. Preview now lives in a closable
+right sidebar that opens after a completed stage; the lower area contains only logs.
+Echo uses compute/radar on the left and target/scattering on the right. Value and compact
 unit controls share a consistent appearance. Peer field labels use the same font,
-card titles have a pale blue heading band, and the spin axis retains a subsection.
+while spin axis, position, velocity, and scattering direction use one subtle vertical-rail pattern for child fields.
 Scrollbars and checkmarks have stronger contrast. Dropdown lists open below the
 control (above only when screen space requires it), using native Windows effects
-where supported. Carrier frequency and waveform share a card, while
+where supported. Radar frequency, waveform, SNR, and noise seed share a card, while
 inversion settings are split into time–frequency analysis and period search.
 These are presentation-only groups: JSON paths remain unchanged. Drag the splitter
 between parameters and logs/previews to adjust the available space.
+
+Observation results are saved as `runs/<run-name>/observation_info.npz`. The GUI can
+validate and reuse an existing file to skip repeated geometry solving, or export the
+current vectors elsewhere. Duration accepts h/min/s, and initial phase accepts degrees
+or π rad; saved JSON still uses the original standard units.
 
 Run the GUI layout and interaction regressions without changing saved GUI settings:
 
