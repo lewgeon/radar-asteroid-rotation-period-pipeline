@@ -126,13 +126,12 @@ def _load_qt_binding():
     preferred = os.environ.get("ROTATION_GUI_QT_BINDING", "PySide6").strip().lower()
     if preferred != "pyqt6":
         from PySide6.QtCore import QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl
-        from PySide6.QtGui import QDesktopServices, QPixmap
+        from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
         from PySide6.QtWidgets import (
             QApplication,
             QAbstractItemView,
             QCheckBox,
             QComboBox,
-            QDockWidget,
             QFileDialog,
             QFrame,
             QGridLayout,
@@ -150,20 +149,21 @@ def _load_qt_binding():
             QStyleFactory,
             QTableWidget,
             QTableWidgetItem,
+            QTabWidget,
             QTextEdit,
+            QToolButton,
             QVBoxLayout,
             QWidget,
         )
         return locals(), "PySide6"
 
     from PyQt6.QtCore import QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl
-    from PyQt6.QtGui import QDesktopServices, QPixmap
+    from PyQt6.QtGui import QDesktopServices, QIcon, QPixmap
     from PyQt6.QtWidgets import (
         QApplication,
         QAbstractItemView,
             QCheckBox,
             QComboBox,
-            QDockWidget,
             QFileDialog,
             QFrame,
         QGridLayout,
@@ -181,7 +181,9 @@ def _load_qt_binding():
         QStyleFactory,
         QTableWidget,
         QTableWidgetItem,
+        QTabWidget,
         QTextEdit,
+        QToolButton,
         QVBoxLayout,
         QWidget,
     )
@@ -212,7 +214,6 @@ PREFERRED = QSizePolicy.Policy.Preferred
 STYLED_PANEL = QFrame.Shape.StyledPanel
 NO_EDIT_TRIGGERS = QAbstractItemView.EditTrigger.NoEditTriggers
 NOT_RUNNING = QProcess.ProcessState.NotRunning
-RIGHT_DOCK = Qt.DockWidgetArea.RightDockWidgetArea
 
 
 ROOT = Path(__file__).resolve().parent
@@ -564,11 +565,27 @@ QHeaderView::section { background: #edf2f8; border: none; padding: 5px; }
 QProgressBar { border: 1px solid #dce2eb; background: white; border-radius: 4px;
     text-align: center; min-height: 22px; }
 QProgressBar::chunk { background: #b3d2f1; border-radius: 3px; }
-QSplitter::handle { background: #e3e9f0; }
-QDockWidget { background: #f3f5f8; color: #193b61; font-weight: 600;
-    border-left: 1px solid #cbd5e1; }
-QDockWidget::title { background: #eff5fc; border-bottom: 1px solid #cbd5e1;
-    padding: 7px 10px; text-align: left; }
+QSplitter::handle { background: #d7e0ea; }
+QSplitter::handle:horizontal { width: 5px; border-left: 1px solid #eef3f8; border-right: 1px solid #a9bbcf; }
+QSplitter::handle:vertical { height: 5px; border-top: 1px solid #eef3f8; border-bottom: 1px solid #a9bbcf; }
+QSplitter::handle:hover { background: #9dbfe5; }
+QSplitter::handle:pressed { background: #3979bf; }
+QSplitter#previewSplitter::handle { background: #c5d5e6; border-left: 1px solid #edf3f8;
+    border-right: 1px solid #7fa8cf; }
+QSplitter#previewSplitter::handle:hover { background: #8fb5dc; border-right-color: #3979bf; }
+QSplitter#previewSplitter::handle:pressed { background: #3979bf; }
+QFrame#resultSidebar { background: white; border: 1px solid #dce2eb; border-radius: 8px; }
+QLabel#resultSidebarTitle { font-size: 16px; font-weight: 600; color: #193b61;
+    background: #eff5fc; border: none; border-left: 3px solid #3979bf;
+    border-radius: 3px; padding: 4px 9px; }
+QToolButton#previewToggle { background: white; border: 1px solid #cbd5e1; border-radius: 6px;
+    color: #35506c; font-size: 15px; padding: 0; }
+QToolButton#previewToggle:hover { background: #edf4fc; border-color: #92b4da; }
+QToolButton#previewToggle:checked { background: #e7f0fb; border-color: #3979bf; color: #215b99; }
+QTabWidget::pane { border: 1px solid #dce2eb; border-radius: 5px; top: -1px; }
+QTabBar::tab { background: #edf2f8; border: 1px solid #dce2eb; padding: 6px 10px;
+    border-top-left-radius: 5px; border-top-right-radius: 5px; margin-right: 2px; }
+QTabBar::tab:selected { background: white; color: #215b99; border-bottom-color: white; }
 QScrollBar:vertical { background: #e8edf3; width: 12px; margin: 0; border-radius: 6px; }
 QScrollBar:horizontal { background: #e8edf3; height: 12px; margin: 0; border-radius: 6px; }
 QScrollBar::handle:vertical { background: #71859d; min-height: 32px; border: 2px solid #e8edf3; border-radius: 6px; }
@@ -970,6 +987,7 @@ class PipelineWindow(QMainWindow):
         self.latest_image_path: Path | None = None
         self.latest_result_path: Path | None = None
         self.latest_plotly_path: Path | None = None
+        self.stage_preview_records: dict[str, dict[str, Path | str | None]] = {}
         self.process: QProcess | None = None
         self.process_stage: str | None = None
         self.process_run_dir: Path | None = None
@@ -992,9 +1010,9 @@ class PipelineWindow(QMainWindow):
             saved_path = state.get("config_path")
             if saved_path:
                 self.config_path = Path(saved_path)
-            return state["config"]
+            return pipeline.pipeline_config_from_any(state["config"])
         self.config_source_text = f"磁盘配置 {DEFAULT_CONFIG_PATH}"
-        return disk_config
+        return pipeline.pipeline_config_from_any(disk_config)
 
     def _build_ui(self) -> None:
         self.setStyleSheet(GUI_STYLE)
@@ -1024,6 +1042,15 @@ class PipelineWindow(QMainWindow):
         self.language_label = QLabel("语言")
         config_row.addWidget(self.language_label)
         config_row.addWidget(self.language_combo)
+        self.preview_toggle_btn = QToolButton()
+        self.preview_toggle_btn.setObjectName("previewToggle")
+        self.preview_toggle_btn.setCheckable(True)
+        self.preview_toggle_btn.setFixedSize(32, 32)
+        self.preview_toggle_btn.setIcon(QIcon(str(ROOT / "assets/gui/sidebar-toggle.svg")))
+        self.preview_toggle_btn.setIconSize(QSize(18, 18))
+        self.preview_toggle_btn.setToolTip(self._tr("显示结果侧栏", "Show Result Sidebar"))
+        self.preview_toggle_btn.toggled.connect(self._on_preview_sidebar_toggled)
+        config_row.addWidget(self.preview_toggle_btn)
         root_layout.addLayout(config_row)
 
         run_row = QHBoxLayout()
@@ -1043,6 +1070,7 @@ class PipelineWindow(QMainWindow):
 
         main_splitter = QSplitter(HORIZONTAL)
         main_splitter.setChildrenCollapsible(False)
+        main_splitter.setHandleWidth(5)
         root_layout.addWidget(main_splitter, 1)
 
         sidebar = QWidget()
@@ -1066,13 +1094,10 @@ class PipelineWindow(QMainWindow):
         save_as_btn.clicked.connect(self._save_config_as_json)
         self.save_btn = save_btn
         self.save_as_btn = save_as_btn
-        self.preview_toggle_btn = QPushButton("显示结果侧栏")
-        self.preview_toggle_btn.setCheckable(True)
         sidebar_layout.addWidget(self.next_btn)
         sidebar_layout.addWidget(self.stop_btn)
         sidebar_layout.addWidget(save_btn)
         sidebar_layout.addWidget(save_as_btn)
-        sidebar_layout.addWidget(self.preview_toggle_btn)
 
         self.history_table = QTableWidget(0, 3)
         self.history_table.setHorizontalHeaderLabels(("时间", "阶段", "状态"))
@@ -1098,16 +1123,31 @@ class PipelineWindow(QMainWindow):
         self._workspace_layout_timer.setSingleShot(True)
         self._workspace_layout_timer.timeout.connect(self._adapt_workspace)
         work_splitter.setChildrenCollapsible(False)
+        work_splitter.setHandleWidth(5)
         main_splitter.addWidget(work_splitter)
         main_splitter.setSizes((240, 1100))
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
 
+        top_region = QWidget()
+        top_region_layout = QHBoxLayout(top_region)
+        top_region_layout.setContentsMargins(0, 0, 0, 0)
+        top_region_layout.setSpacing(0)
+
+        self.preview_splitter = QSplitter(HORIZONTAL)
+        self.preview_splitter.setObjectName("previewSplitter")
+        self.preview_splitter.setChildrenCollapsible(False)
+        self.preview_splitter.setHandleWidth(5)
+        self.preview_splitter.splitterMoved.connect(self._remember_preview_sidebar_width)
+        self.preview_sidebar_width = 500
+
         self.params_group = QGroupBox("阶段参数")
         self.params_group.setMinimumHeight(240)
+        self.params_group.setMinimumWidth(380)
         params_outer = QVBoxLayout(self.params_group)
         self.params_scroll = QScrollArea()
         self.params_scroll.setWidgetResizable(True)
+        self.params_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.params_container = QWidget()
         self.params_container.setObjectName("parameterCanvas")
         self.params_layout = QVBoxLayout(self.params_container)
@@ -1115,7 +1155,30 @@ class PipelineWindow(QMainWindow):
         self.params_layout.setSpacing(14)
         self.params_scroll.setWidget(self.params_container)
         params_outer.addWidget(self.params_scroll)
-        work_splitter.addWidget(self.params_group)
+        self.preview_splitter.addWidget(self.params_group)
+
+        self.result_sidebar = QFrame()
+        self.result_sidebar.setObjectName("resultSidebar")
+        self.result_sidebar.setMinimumWidth(300)
+        result_layout = QVBoxLayout(self.result_sidebar)
+        result_layout.setContentsMargins(12, 12, 12, 12)
+        result_layout.setSpacing(10)
+        self.result_sidebar_title = QLabel("结果预览")
+        self.result_sidebar_title.setObjectName("resultSidebarTitle")
+        result_layout.addWidget(self.result_sidebar_title)
+        self.result_tabs = QTabWidget()
+        result_layout.addWidget(self.result_tabs, 1)
+        self.empty_preview_label = QLabel("绘制结果会在此显示。")
+        self.empty_preview_label.setAlignment(ALIGN_CENTER)
+        self.empty_preview_label.setWordWrap(True)
+        result_layout.addWidget(self.empty_preview_label, 1)
+        self.result_sidebar.hide()
+        self.preview_splitter.addWidget(self.result_sidebar)
+        self.preview_splitter.setStretchFactor(0, 1)
+        self.preview_splitter.setStretchFactor(1, 0)
+        top_region_layout.addWidget(self.preview_splitter, 1)
+
+        work_splitter.addWidget(top_region)
 
         work_splitter.addWidget(log_group := QGroupBox("执行日志"))
         work_splitter.setSizes((590, 230))
@@ -1127,40 +1190,6 @@ class PipelineWindow(QMainWindow):
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
         log_layout.addWidget(self.log_edit)
-        self.result_dock = QDockWidget("结果预览", self)
-        self.result_dock.setObjectName("resultDock")
-        self.result_dock.setAllowedAreas(RIGHT_DOCK)
-        self.result_dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetClosable
-            | QDockWidget.DockWidgetFeature.DockWidgetMovable
-            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
-        )
-        result_panel = QWidget()
-        result_layout = QVBoxLayout(result_panel)
-        result_head = QHBoxLayout()
-        self.result_status = QLabel("执行阶段后会在这里显示关键结果。")
-        self.result_status.setWordWrap(True)
-        self.open_result_btn = QPushButton("打开结果")
-        self.open_3d_btn = QPushButton("打开 3D")
-        self.open_result_btn.setEnabled(False)
-        self.open_3d_btn.setEnabled(False)
-        self.open_result_btn.clicked.connect(self._open_latest_result)
-        self.open_3d_btn.clicked.connect(self._open_plotly)
-        result_head.addWidget(self.result_status, 1)
-        result_head.addWidget(self.open_result_btn)
-        result_head.addWidget(self.open_3d_btn)
-        result_layout.addLayout(result_head)
-        self.preview = ImagePreview()
-        result_layout.addWidget(self.preview, 1)
-        self.web_preview = QWebEngineView() if QWebEngineView else None
-        if self.web_preview:
-            result_layout.addWidget(self.web_preview, 1)
-            self.web_preview.hide()
-        self.result_dock.setWidget(result_panel)
-        self.addDockWidget(RIGHT_DOCK, self.result_dock)
-        self.preview_toggle_btn.toggled.connect(self.result_dock.setVisible)
-        self.result_dock.visibilityChanged.connect(self._on_result_dock_visibility_changed)
-        self.result_dock.hide()
 
         progress_row = QHBoxLayout()
         self.status_label = QLabel("就绪")
@@ -1174,15 +1203,37 @@ class PipelineWindow(QMainWindow):
         self._apply_language()
         self._workspace_layout_timer.start(0)
 
-    def _on_result_dock_visibility_changed(self, visible: bool) -> None:
+    def _on_preview_sidebar_toggled(self, visible: bool) -> None:
+        self._set_preview_sidebar_visible(visible)
+
+    def _set_preview_sidebar_visible(self, visible: bool) -> None:
+        if not visible and hasattr(self, "preview_splitter") and self.result_sidebar.isVisible():
+            self._remember_preview_sidebar_width()
+        self.result_sidebar.setVisible(visible)
+        if visible and hasattr(self, "preview_splitter"):
+            QTimer.singleShot(0, self._restore_preview_sidebar_width)
         self.preview_toggle_btn.blockSignals(True)
         self.preview_toggle_btn.setChecked(visible)
-        self.preview_toggle_btn.setText(
-            self._tr("隐藏结果侧栏", "Hide Result Sidebar")
-            if visible
-            else self._tr("显示结果侧栏", "Show Result Sidebar")
+        self.preview_toggle_btn.setToolTip(
+            self._tr("隐藏结果侧栏", "Hide Result Sidebar") if visible else self._tr("显示结果侧栏", "Show Result Sidebar")
         )
         self.preview_toggle_btn.blockSignals(False)
+
+    def _remember_preview_sidebar_width(self, *_args) -> None:
+        if not hasattr(self, "preview_splitter"):
+            return
+        sizes = self.preview_splitter.sizes()
+        if len(sizes) > 1 and sizes[1] > 0:
+            self.preview_sidebar_width = sizes[1]
+
+    def _restore_preview_sidebar_width(self) -> None:
+        if not self.result_sidebar.isVisible():
+            return
+        total = max(self.preview_splitter.width(), 900)
+        parameter_min = max(getattr(self.parameter_cards, "card_minimum", 360), 360) if hasattr(self, "parameter_cards") else 360
+        sidebar_width = max(self.preview_sidebar_width, 300)
+        sidebar_width = min(sidebar_width, max(300, total - parameter_min))
+        self.preview_splitter.setSizes((max(parameter_min, total - sidebar_width), sidebar_width))
 
     def _adapt_workspace(self):
         """Rebalance only on stage/breakpoint changes; preserve manual splitter drags."""
@@ -1254,10 +1305,10 @@ class PipelineWindow(QMainWindow):
         )
         self.params_group.setTitle(f"{self._stage_label(self.current_stage)} {self._tr('参数', 'Parameters')}")
         self.log_group.setTitle(self._tr("执行日志", "Log"))
-        self.result_dock.setWindowTitle(self._tr("结果预览", "Preview"))
-        self.open_result_btn.setText(self._tr("打开结果", "Open Result"))
-        self.open_3d_btn.setText(self._tr("打开 3D", "Open 3D"))
-        self._on_result_dock_visibility_changed(self.result_dock.isVisible())
+        self.result_sidebar_title.setText(self._tr("结果预览", "Preview"))
+        self.empty_preview_label.setText(self._tr("绘制结果会在此显示。", "Rendered results will appear here."))
+        self._set_preview_sidebar_visible(self.result_sidebar.isVisible())
+        self._refresh_result_tabs()
         if self.process is None:
             self.status_label.setText(self._tr("就绪", "Ready"))
             self.progress_bar.setFormat(self._tr("就绪", "Ready"))
@@ -2076,7 +2127,8 @@ class PipelineWindow(QMainWindow):
             return
         path = Path(filename)
         try:
-            write_json(path, self.config_data)
+            export_payload = pipeline.gui_config_from_pipeline_config(self.config_data, self.language)
+            write_json(path, export_payload)
             self.config_path = path
             self.config_path_edit.setText(str(path))
             self.run_name_edit.setText(path.stem)
@@ -2116,6 +2168,7 @@ class PipelineWindow(QMainWindow):
             path = ROOT / path
         try:
             data = read_json(path, {})
+            data = pipeline.pipeline_config_from_any(data)
             pipeline.require_sections(data)
         except Exception as exc:
             QMessageBox.critical(self, "载入失败", str(exc))
@@ -2487,16 +2540,20 @@ class PipelineWindow(QMainWindow):
         self.stop_requested = False
 
     def _update_result_preview(self, stage: str, run_dir: Path) -> None:
-        self.result_dock.show()
-        self.result_dock.raise_()
         try:
             image_path, result_path, plotly_path, message = self._create_stage_preview(stage, run_dir)
         except Exception as exc:
             self.latest_image_path = None
             self.latest_result_path = run_dir
             self.latest_plotly_path = None
-            self.result_status.setText(f"结果预览生成失败：{exc}")
-            self.preview.set_image(None, "结果已生成，但预览图创建失败。")
+            self.stage_preview_records[stage] = {
+                "image_path": None,
+                "result_path": run_dir,
+                "plotly_path": None,
+                "message": f"结果预览生成失败：{exc}",
+            }
+            self._refresh_result_tabs(stage)
+            self._set_preview_sidebar_visible(True)
             self._append_warning(f"[{now_text()}] 结果预览生成失败：{exc}")
             return
         self.latest_image_path = image_path
@@ -2504,21 +2561,96 @@ class PipelineWindow(QMainWindow):
         if stage == "observation":
             self.latest_observation_path = Path(result_path)
         self.latest_plotly_path = plotly_path
-        self.open_result_btn.setEnabled(bool(result_path))
-        self.open_3d_btn.setEnabled(bool(plotly_path))
-        self.result_status.setText(message)
-        self._show_stage_preview(image_path, plotly_path, message)
+        self.stage_preview_records[stage] = {
+            "image_path": image_path,
+            "result_path": result_path,
+            "plotly_path": plotly_path,
+            "message": message,
+        }
+        self._refresh_result_tabs(stage)
+        self._set_preview_sidebar_visible(True)
 
-    def _show_stage_preview(self, image_path: Path | None, plotly_path: Path | None, message: str) -> None:
-        if self.web_preview and plotly_path and plotly_path.exists():
-            self.preview.hide()
-            self.web_preview.show()
-            self.web_preview.load(QUrl.fromLocalFile(str(plotly_path.resolve())))
+    def _refresh_result_tabs(self, active_stage: str | None = None) -> None:
+        while self.result_tabs.count():
+            widget = self.result_tabs.widget(0)
+            self.result_tabs.removeTab(0)
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        ordered = [stage for stage in STAGES if stage in self.stage_preview_records]
+        has_records = bool(ordered)
+        self.result_tabs.setVisible(has_records)
+        self.empty_preview_label.setVisible(not has_records)
+        if not has_records:
             return
-        if self.web_preview:
-            self.web_preview.hide()
-        self.preview.show()
-        self.preview.set_image(image_path, message)
+        active_index = 0
+        for stage in ordered:
+            record = self.stage_preview_records[stage]
+            page = self._create_preview_page(
+                record.get("image_path"),
+                record.get("result_path"),
+                record.get("plotly_path"),
+                str(record.get("message") or ""),
+            )
+            index = self.result_tabs.addTab(page, self._stage_label(stage))
+            if stage == active_stage:
+                active_index = index
+        self.result_tabs.setCurrentIndex(active_index)
+
+    def _create_preview_page(
+        self,
+        image_path: Path | str | None,
+        result_path: Path | str | None,
+        plotly_path: Path | str | None,
+        message: str,
+    ) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+        status = QLabel(message or self._tr("结果已生成。", "Result generated."))
+        status.setWordWrap(True)
+        open_result_btn = QPushButton(self._tr("打开结果", "Open Result"))
+        open_plotly_btn = QPushButton(self._tr("打开交互图", "Open Interactive"))
+        result = Path(result_path) if result_path else None
+        plotly = Path(plotly_path) if plotly_path else None
+        open_result_btn.setEnabled(bool(result and result.exists()))
+        open_plotly_btn.setEnabled(bool(plotly and plotly.exists()))
+        open_result_btn.clicked.connect(lambda _checked=False, path=result: self._open_path(path))
+        open_plotly_btn.clicked.connect(lambda _checked=False, path=plotly: self._open_plotly_path(path))
+        head = QHBoxLayout()
+        head.addWidget(status, 1)
+        head.addWidget(open_result_btn)
+        head.addWidget(open_plotly_btn)
+        layout.addLayout(head)
+        image_preview = ImagePreview()
+        web_preview = QWebEngineView() if QWebEngineView else None
+        self._show_stage_preview(image_preview, web_preview, Path(image_path) if image_path else None, plotly, message)
+        if web_preview and web_preview.isVisible():
+            layout.addWidget(web_preview, 1)
+        else:
+            if web_preview:
+                web_preview.deleteLater()
+            layout.addWidget(image_preview, 1)
+        return page
+
+    def _show_stage_preview(
+        self,
+        preview: ImagePreview,
+        web_preview,
+        image_path: Path | None,
+        plotly_path: Path | None,
+        message: str,
+    ) -> None:
+        if web_preview and plotly_path and plotly_path.exists():
+            preview.hide()
+            web_preview.show()
+            web_preview.load(QUrl.fromLocalFile(str(plotly_path.resolve())))
+            return
+        if web_preview:
+            web_preview.hide()
+        preview.show()
+        preview.set_image(image_path, message)
 
     def _create_stage_preview(self, stage: str, run_dir: Path):
         PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
@@ -2674,21 +2806,62 @@ class PipelineWindow(QMainWindow):
         write_json(HISTORY_PATH, history[-300:])
 
     def _append_log(self, text: str) -> None:
-        self.log_edit.append(text)
+        lines = str(text).splitlines()
+        if not lines:
+            self.log_edit.append("")
+            return
+        for line in lines:
+            self.log_edit.append(self._format_log_line(line))
 
     def _append_warning(self, text: str) -> None:
-        self.log_edit.append(f'<span style="color:#b45309;font-weight:600;">{html.escape(text)}</span>')
+        self.log_edit.append(self._log_badge_line("WARN", text, "#b45309", "#fff7ed", "#fed7aa"))
 
     def _append_error(self, text: str) -> None:
-        self.log_edit.append(f'<span style="color:#b91c1c;font-weight:700;">{html.escape(text)}</span>')
+        self.log_edit.append(self._log_badge_line("ERROR", text, "#b91c1c", "#fef2f2", "#fecaca"))
+
+    def _format_log_line(self, line: str) -> str:
+        stripped = line.strip()
+        escaped = html.escape(line)
+        if not stripped:
+            return ""
+        if "开始执行" in stripped:
+            return self._log_badge_line("RUN", stripped, "#215b99", "#eff6ff", "#bfdbfe")
+        if "完成" in stripped or "已保存" in stripped or "已载入" in stripped or "已复用" in stripped:
+            return self._log_badge_line("OK", stripped, "#166534", "#f0fdf4", "#bbf7d0")
+        if stripped.startswith(("命令：", "工作目录：", "完整原始输出日志：", "生成配置：")):
+            return self._log_badge_line("INFO", stripped, "#35506c", "#f8fafc", "#dce2eb")
+        if stripped.startswith(("experiment:", "observation:", "echo:", "inversion:")):
+            return (
+                '<span style="font-family:Consolas,monospace;color:#486785;'
+                f'background:#f8fafc;">  {escaped}</span>'
+            )
+        if "warning" in stripped.lower() or "警告" in stripped:
+            return self._log_badge_line("WARN", stripped, "#b45309", "#fff7ed", "#fed7aa")
+        return f'<span style="color:#25354a;">{escaped}</span>'
+
+    def _log_badge_line(self, badge: str, text: str, color: str, background: str, border: str) -> str:
+        return (
+            f'<span style="background:{background};border:1px solid {border};border-radius:4px;'
+            f'padding:2px 6px;color:{color};font-family:Consolas,monospace;font-weight:700;">'
+            f'{badge}</span>'
+            f' <span style="color:{color};font-weight:600;">{html.escape(str(text))}</span>'
+        )
 
     def _open_latest_result(self) -> None:
         if self.latest_result_path and self.latest_result_path.exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.latest_result_path.resolve())))
+            self._open_path(self.latest_result_path)
 
     def _open_plotly(self) -> None:
         if self.latest_plotly_path and self.latest_plotly_path.exists():
-            webbrowser.open(self.latest_plotly_path.resolve().as_uri())
+            self._open_plotly_path(self.latest_plotly_path)
+
+    def _open_path(self, path: Path | None) -> None:
+        if path and path.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+    def _open_plotly_path(self, path: Path | None) -> None:
+        if path and path.exists():
+            webbrowser.open(path.resolve().as_uri())
 
     def closeEvent(self, event) -> None:
         try:
