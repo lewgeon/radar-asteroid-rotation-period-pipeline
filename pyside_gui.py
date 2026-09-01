@@ -12,6 +12,8 @@ import sys
 import webbrowser
 from pathlib import Path
 
+import numpy as np
+
 import pipeline
 
 
@@ -122,7 +124,7 @@ QT_WEBENGINE_AVAILABLE = _prepare_qt_webengine_paths()
 def _load_qt_binding():
     preferred = os.environ.get("ROTATION_GUI_QT_BINDING", "PySide6").strip().lower()
     if preferred != "pyqt6":
-        from PySide6.QtCore import QProcess, QProcessEnvironment, Qt, QTimer, QUrl
+        from PySide6.QtCore import QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl
         from PySide6.QtGui import QDesktopServices, QPixmap
         from PySide6.QtWidgets import (
             QApplication,
@@ -152,15 +154,15 @@ def _load_qt_binding():
         )
         return locals(), "PySide6"
 
-    from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt, QTimer, QUrl
+    from PyQt6.QtCore import QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl
     from PyQt6.QtGui import QDesktopServices, QPixmap
     from PyQt6.QtWidgets import (
         QApplication,
         QAbstractItemView,
-        QCheckBox,
-        QComboBox,
-        QFileDialog,
-        QFrame,
+            QCheckBox,
+            QComboBox,
+            QFileDialog,
+            QFrame,
         QGridLayout,
         QGroupBox,
         QHBoxLayout,
@@ -202,6 +204,8 @@ VERTICAL = Qt.Orientation.Vertical
 KEEP_ASPECT = Qt.AspectRatioMode.KeepAspectRatio
 SMOOTH_TRANSFORM = Qt.TransformationMode.SmoothTransformation
 EXPANDING = QSizePolicy.Policy.Expanding
+FIXED = QSizePolicy.Policy.Fixed
+PREFERRED = QSizePolicy.Policy.Preferred
 STYLED_PANEL = QFrame.Shape.StyledPanel
 NO_EDIT_TRIGGERS = QAbstractItemView.EditTrigger.NoEditTriggers
 NOT_RUNNING = QProcess.ProcessState.NotRunning
@@ -219,6 +223,11 @@ STAGE_LABELS = {
     "echo": "2. 回波仿真",
     "inversion": "3. 周期反演",
 }
+STAGE_LABELS_EN = {
+    "observation": "1. Observation",
+    "echo": "2. Echo Simulation",
+    "inversion": "3. Period Inversion",
+}
 GROUP_LABELS = {
     "target": "目标参数",
     "transmitter": "发射站",
@@ -231,14 +240,72 @@ GROUP_LABELS = {
     "radar": "雷达参数",
     "waveform": "波形参数",
 }
+GROUP_LABELS_EN = {
+    "target": "Target",
+    "transmitter": "Transmitter",
+    "receiver": "Receiver",
+    "receive": "Receive",
+    "ephemeris": "Ephemeris",
+    "solver": "Solver",
+    "compute": "Compute",
+    "scattering_spot": "Scattering Spot",
+    "radar": "Radar",
+    "waveform": "Waveform",
+    "通用参数": "General",
+}
+STAGE_GROUP_ORDER = {
+    "observation": ("通用参数", "target", "transmitter", "receiver", "receive", "ephemeris", "solver"),
+    "echo": ("通用参数", "compute", "target", "scattering_spot", "radar", "waveform"),
+    "inversion": ("通用参数",),
+}
 CHOICES = {
     "state": ("static", "linear", "geodetic_fixed", "astropy_geodetic", "horizons_vectors"),
     "device": ("auto", "cuda:0", "cpu"),
     "dtype": ("float32", "float64"),
-    "type": ("continuous_wave",),
+    "type": ("continuous_wave", "chirp_pulse_train"),
     "object_type": ("null", "smallbody"),
     "query_mode": ("auto", "range", "list"),
-    "spin_pole_frame": ("icrs", "ecliptic"),
+    "spin_pole_frame": ("equatorial", "ecliptic"),
+}
+OPTION_LABELS = {
+    "zh": {
+        "true": "是",
+        "false": "否",
+        "continuous_wave": "连续波",
+        "chirp_pulse_train": "Chirp 脉冲序列",
+        "equatorial": "赤道坐标系",
+        "icrs": "赤道坐标系",
+        "ecliptic": "黄道坐标系",
+        "auto": "自动",
+        "range": "范围查询",
+        "list": "列表查询",
+        "null": "无",
+        "smallbody": "小天体",
+        "static": "静态位置",
+        "linear": "匀速直线",
+        "geodetic_fixed": "固定大地坐标",
+        "astropy_geodetic": "Astropy 大地坐标",
+        "horizons_vectors": "Horizons 星历",
+    },
+    "en": {
+        "true": "Yes",
+        "false": "No",
+        "continuous_wave": "Continuous Wave",
+        "chirp_pulse_train": "Chirp Pulse Train",
+        "equatorial": "Equatorial",
+        "icrs": "Equatorial",
+        "ecliptic": "Ecliptic",
+        "auto": "Auto",
+        "range": "Range",
+        "list": "List",
+        "null": "None",
+        "smallbody": "Small Body",
+        "static": "Static",
+        "linear": "Linear",
+        "geodetic_fixed": "Geodetic Fixed",
+        "astropy_geodetic": "Astropy Geodetic",
+        "horizons_vectors": "Horizons Vectors",
+    },
 }
 HORIZONS_ID_TYPE_ALIASES = {
     "": None,
@@ -318,20 +385,28 @@ FIELD_LABELS = {
     "cache": "使用缓存",
     "model_path": "形状模型",
     "seed": "随机种子",
+    "chunk_size": "计算分块",
     "device": "计算设备",
     "dtype": "浮点精度",
     "rotation_period_s": "自转周期",
     "initial_phase_deg": "初始相位",
-    "spin_pole_frame": "自转轴坐标系",
-    "spin_pole_icrs_deg": "自转轴赤经/赤纬",
-    "spin_pole_ecliptic_deg": "自转轴黄经/黄纬",
+    "spin_pole_frame": "坐标系",
+    "spin_pole_icrs_deg": "α / δ",
+    "spin_pole_ecliptic_deg": "λ / β",
     "scattering_power": "散射指数",
     "direction_body": "斑块方向",
+    "enabled": "启用",
     "radius_deg": "斑块半径",
     "strength": "斑块强度",
     "carrier_frequency_hz": "载频",
     "type": "波形类型",
     "amplitude": "幅度",
+    "pulse_width_s": "脉冲宽度",
+    "bandwidth_hz": "Chirp 带宽",
+    "pri_s": "脉冲重复间隔",
+    "first_pulse_start_s": "首脉冲起点",
+    "pulse_count": "脉冲数量",
+    "pulse_start_s": "脉冲起点序列",
     "snr_db": "信噪比",
     "stft_window_samples": "STFT窗长",
     "stft_overlap_fraction": "STFT重叠",
@@ -339,12 +414,68 @@ FIELD_LABELS = {
     "period_max_s": "最大周期",
     "period_grid_size": "周期网格数",
 }
+FIELD_LABELS_EN = {
+    "id": "ID",
+    "name": "Name",
+    "state": "State",
+    "position_m": "Position",
+    "position0_m": "Initial Position",
+    "velocity_m_s": "Velocity",
+    "lat_deg": "Latitude",
+    "lon_deg": "Longitude",
+    "height_m": "Height",
+    "object_type": "Object Type",
+    "start_utc": "Start UTC",
+    "duration_s": "Duration",
+    "sample_rate_hz": "Sample Rate",
+    "tolerance_s": "Tolerance",
+    "max_iter": "Max Iterations",
+    "location": "Center",
+    "refplane": "Reference Plane",
+    "padding_s": "Padding",
+    "query_step_s": "Query Step",
+    "query_mode": "Query Mode",
+    "query_chunk_size": "Query Chunk",
+    "min_query_chunk_size": "Min Retry Chunk",
+    "query_retries": "Retries",
+    "cache": "Use Cache",
+    "model_path": "Shape Model",
+    "seed": "Seed",
+    "chunk_size": "Chunk Size",
+    "device": "Device",
+    "dtype": "Float Type",
+    "rotation_period_s": "Rotation Period",
+    "initial_phase_deg": "Initial Phase",
+    "spin_pole_frame": "Frame",
+    "spin_pole_icrs_deg": "α / δ",
+    "spin_pole_ecliptic_deg": "λ / β",
+    "scattering_power": "Scattering Power",
+    "direction_body": "Spot Direction",
+    "enabled": "Enabled",
+    "radius_deg": "Spot Radius",
+    "strength": "Spot Strength",
+    "carrier_frequency_hz": "Carrier Frequency",
+    "type": "Waveform",
+    "amplitude": "Amplitude",
+    "pulse_width_s": "Pulse Width",
+    "bandwidth_hz": "Chirp Bandwidth",
+    "pri_s": "PRI",
+    "first_pulse_start_s": "First Pulse Start",
+    "pulse_count": "Pulse Count",
+    "pulse_start_s": "Pulse Starts",
+    "snr_db": "SNR",
+    "stft_window_samples": "STFT Window",
+    "stft_overlap_fraction": "STFT Overlap",
+    "period_min_s": "Min Period",
+    "period_max_s": "Max Period",
+    "period_grid_size": "Period Grid Size",
+}
 FIELD_UNITS = {
     "position_m": "m",
     "position0_m": "m",
     "velocity_m_s": "m/s",
-    "lat_deg": "deg",
-    "lon_deg": "deg",
+    "lat_deg": "°",
+    "lon_deg": "°",
     "height_m": "m",
     "duration_s": "s",
     "sample_rate_hz": "Hz",
@@ -352,14 +483,101 @@ FIELD_UNITS = {
     "padding_s": "s",
     "query_step_s": "s",
     "rotation_period_s": "s",
-    "initial_phase_deg": "deg",
-    "spin_pole_icrs_deg": "deg",
-    "spin_pole_ecliptic_deg": "deg",
-    "radius_deg": "deg",
+    "initial_phase_deg": "°",
+    "spin_pole_icrs_deg": "°",
+    "spin_pole_ecliptic_deg": "°",
+    "radius_deg": "°",
     "carrier_frequency_hz": "Hz",
+    "pulse_width_s": "s",
+    "bandwidth_hz": "Hz",
+    "pri_s": "s",
+    "first_pulse_start_s": "s",
     "snr_db": "dB",
     "period_min_s": "s",
     "period_max_s": "s",
+}
+UNIT_CHOICES = {
+    "rotation_period_s": (("h", 3600.0), ("s", 1.0)),
+    "period_min_s": (("h", 3600.0), ("s", 1.0)),
+    "period_max_s": (("h", 3600.0), ("s", 1.0)),
+    "carrier_frequency_hz": (("GHz", 1.0e9), ("MHz", 1.0e6), ("Hz", 1.0)),
+    "bandwidth_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
+    "sample_rate_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
+}
+CONTROL_HEIGHT = 32
+GUI_STYLE = """
+QWidget { font-family: "Microsoft YaHei", "Segoe UI"; font-size: 13px; color: #25354a; }
+QMainWindow { background: #f3f5f8; }
+QGroupBox { border: 1px solid #dce2eb; border-radius: 8px;
+    margin-top: 12px; padding-top: 12px; font-weight: 600; }
+QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+QScrollArea { border: none; background: transparent; }
+QWidget#parameterCanvas, QWidget#parameterCards { background: #f3f5f8; }
+QFrame#parameterCard { background: white; border: 1px solid #dce2eb; border-radius: 8px; }
+QLabel#cardTitle { font-size: 16px; font-weight: 600; color: #193b61;
+    background: #eff5fc; border: none; border-left: 3px solid #3979bf;
+    border-radius: 3px; padding: 4px 9px; }
+QLabel#subsectionTitle { font-size: 13px; font-weight: 600; color: #526882;
+    border-top: 1px solid #e8edf3; padding-top: 8px; }
+QLineEdit, QComboBox { background: white; border: 1px solid #cbd5e1;
+    border-radius: 5px; padding: 0 8px; min-height: 30px; selection-background-color: #d9e9fb; }
+QLineEdit:focus, QComboBox:focus { border-color: #3979bf; }
+QComboBox { padding-right: 24px; combobox-popup: 0; }
+QComboBox::drop-down { border: none; width: 22px; }
+QComboBox QAbstractItemView { background: white; border: 1px solid #9bafc5;
+    selection-background-color: #dbeafb; selection-color: #193b61; outline: 0; }
+QWidget#unitValue { background: white; border: 1px solid #cbd5e1; border-radius: 5px; }
+QWidget#unitValue QLineEdit { border: none; background: transparent; min-height: 0; }
+QWidget#unitValue QLineEdit:focus { background: #edf5ff; }
+QWidget#unitValue QLabel#unitSuffix, QWidget#unitValue QComboBox#unitSuffix {
+    background: #f0f4f8; color: #526882; border: none; border-left: 1px solid #dce2eb;
+    border-radius: 0; min-height: 0; padding: 0 6px; font-size: 12px; }
+QWidget#unitValue QComboBox#unitSuffix { padding-right: 16px; }
+QWidget#unitValue QComboBox#unitSuffix::drop-down { width: 16px; }
+QLabel#componentLabel { color: #60738c; font-size: 12px; }
+QPushButton { background: white; border: 1px solid #cbd5e1; border-radius: 5px;
+    padding: 6px 10px; min-height: 20px; }
+QPushButton:hover { background: #edf4fc; border-color: #92b4da; }
+QPushButton:disabled { color: #94a3b8; background: #f1f4f8; }
+QPushButton#runButton { background: #2868ab; color: white; border-color: #2868ab; font-weight: 600; }
+QPushButton#runButton:disabled { background: #a7bfd9; border-color: #a7bfd9; }
+QPushButton[activeStage="true"] { background: #e7f0fb; border-color: #9dbfe5; color: #215b99; font-weight: 600; }
+QTableWidget, QTextEdit { background: white; border: 1px solid #dce2eb; border-radius: 4px; }
+QHeaderView::section { background: #edf2f8; border: none; padding: 5px; }
+QProgressBar { border: 1px solid #dce2eb; background: white; border-radius: 4px;
+    text-align: center; min-height: 22px; }
+QProgressBar::chunk { background: #b3d2f1; border-radius: 3px; }
+QSplitter::handle { background: #e3e9f0; }
+QScrollBar:vertical { background: #e8edf3; width: 12px; margin: 0; border-radius: 6px; }
+QScrollBar:horizontal { background: #e8edf3; height: 12px; margin: 0; border-radius: 6px; }
+QScrollBar::handle:vertical { background: #71859d; min-height: 32px; border: 2px solid #e8edf3; border-radius: 6px; }
+QScrollBar::handle:horizontal { background: #71859d; min-width: 32px; border: 2px solid #e8edf3; border-radius: 6px; }
+QScrollBar::handle:hover { background: #486785; }
+QScrollBar::handle:pressed { background: #28598a; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QCheckBox { spacing: 8px; }
+QCheckBox::indicator { width: 17px; height: 17px; border-radius: 4px; }
+QCheckBox::indicator:unchecked { background: white; border: 2px solid #71859d; }
+QCheckBox::indicator:unchecked:hover { border-color: #2868ab; background: #edf5ff; }
+QCheckBox::indicator:checked { background: #2868ab; border: 2px solid #2868ab; }
+QCheckBox::indicator:checked:hover { background: #1e558e; border-color: #1e558e; }
+"""
+GUI_STYLE += (
+    'QComboBox::down-arrow { image: url("'
+    + (ROOT / "assets/gui/chevron-down.svg").as_posix()
+    + '"); width: 10px; height: 6px; }'
+)
+GUI_STYLE += (
+    'QCheckBox::indicator:checked { image: url("'
+    + (ROOT / "assets/gui/check.svg").as_posix()
+    + '"); }'
+)
+SCATTERING_SPOT_DEFAULTS = {
+    "enabled": True,
+    "direction_body": [1.0, 0.25, 0.15],
+    "radius_deg": 12.0,
+    "strength": 8.0,
 }
 
 
@@ -420,7 +638,7 @@ class ImagePreview(QLabel):
     def __init__(self):
         super().__init__("执行阶段后会在这里显示关键结果。")
         self.setAlignment(ALIGN_CENTER)
-        self.setMinimumHeight(260)
+        self.setMinimumHeight(130)
         self.setFrameShape(STYLED_PANEL)
         self.setSizePolicy(EXPANDING, EXPANDING)
         self._pixmap: QPixmap | None = None
@@ -460,6 +678,199 @@ class NoWheelComboBox(QComboBox):
         event.ignore()
 
 
+def configure_gui_style(app):
+    """Use native Windows combo transitions, retaining Fusion as a fallback."""
+    styles = {name.lower(): name for name in QStyleFactory.keys()}
+    app.setStyle(next((styles[name] for name in ("windowsvista", "windows11", "windows") if name in styles), "Fusion"))
+    app.setEffectEnabled(Qt.UIEffect.UI_AnimateCombo, True)
+
+
+class ParameterCards(QWidget):
+    """Stable semantic lanes, with explicit compact and wide-screen layouts."""
+
+    def __init__(self, cards, stage, on_layout_changed=None):
+        super().__init__()
+        self.setObjectName("parameterCards")
+        self.cards = cards
+        self.stage = stage
+        self.on_layout_changed = on_layout_changed
+        self.layout_mode = "compact"
+        self.column_count = 1
+        self.gap = 14
+        for card in cards:
+            card.setParent(self)
+            card.ensurePolished()
+        self.card_minimum = max([360] + [card.minimumSizeHint().width() for card in cards])
+        self.setMinimumWidth(self.card_minimum)
+        self.setSizePolicy(EXPANDING, FIXED)
+        QTimer.singleShot(0, self.reflow)
+
+    def sizeHint(self):
+        return QSize(self.card_minimum, self.minimumHeight())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.reflow()
+
+    def reflow(self):
+        wide = self.width() >= max(1320, self.card_minimum * 3 + self.gap * 2)
+        compact_lanes = {
+            "observation": (("target", "transmitter", "receiver"), ("receive", "ephemeris", "solver")),
+            "echo": (("通用参数", "signal", "compute"), ("target", "scattering_spot")),
+            "inversion": (("spectrum",), ("period_search",)),
+        }
+        wide_lanes = {
+            "observation": (("target",), ("transmitter", "receiver"), ("receive", "ephemeris", "solver")),
+            "echo": (("通用参数", "compute"), ("target", "scattering_spot"), ("signal",)),
+            "inversion": (("spectrum",), ("period_search",)),
+        }
+        lanes = (wide_lanes if wide else compact_lanes)[self.stage]
+        if self.width() < self.card_minimum * 2 + self.gap:
+            lanes = (tuple(name for lane in lanes for name in lane),)
+        self.layout_mode = "wide" if wide else "compact"
+        self.column_count = len(lanes)
+        lane_map = {name: column for column, lane in enumerate(lanes) for name in lane}
+        cards_by_name = {card.property("groupName"): card for card in self.cards}
+        order = [name for lane in lanes for name in lane if name in cards_by_name]
+        order.extend(name for name in cards_by_name if name not in lane_map)
+        available = min(self.width() - self.gap * (self.column_count - 1), self.column_count * 620)
+        heights = [0] * self.column_count
+        for name in order:
+            card = cards_by_name[name]
+            column = lane_map.get(name, self.column_count - 1)
+            left = column * available // self.column_count + column * self.gap
+            right = (column + 1) * available // self.column_count + column * self.gap
+            card.layout().itemAt(1).layout().invalidate()
+            card.layout().invalidate()
+            height = max(card.sizeHint().height(), card.minimumSizeHint().height())
+            card.setGeometry(left, heights[column], right - left, height)
+            heights[column] += height + self.gap
+        self.setFixedHeight(max(0, max(heights) - self.gap))
+        if self.on_layout_changed:
+            self.on_layout_changed()
+
+
+class UnitValueWidget(QWidget):
+    def __init__(self, value, unit_options: tuple[tuple[str, float], ...], editable_unit: bool = False):
+        super().__init__()
+        self.setObjectName("unitValue")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedHeight(CONTROL_HEIGHT)
+        self.setSizePolicy(EXPANDING, FIXED)
+        self.unit_options = unit_options
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+        self.edit = QLineEdit()
+        self.edit.setMinimumWidth(64)
+        self.edit.setFixedHeight(CONTROL_HEIGHT - 2)
+        unit_label, multiplier = self._best_unit(float(value) if isinstance(value, (int, float)) else 0.0)
+        self.edit.setText(format_value(float(value) / multiplier if isinstance(value, (int, float)) else value))
+        layout.addWidget(self.edit, 1)
+        if editable_unit and len(unit_options) > 1:
+            self.unit_combo = NoWheelComboBox()
+            for label, factor in unit_options:
+                self.unit_combo.addItem(label, factor)
+            self.unit_combo.setCurrentText(unit_label)
+            self.unit_combo.setObjectName("unitSuffix")
+            longest = max(len(label) for label, _ in unit_options)
+            self.unit_combo.setFixedSize(68 if longest > 2 else 48, CONTROL_HEIGHT - 2)
+            self.unit_combo.setToolTip("切换输入单位 / Select input unit")
+            layout.addWidget(self.unit_combo)
+            self.unit_suffix = self.unit_combo
+        else:
+            self.unit_combo = None
+            unit = QLabel(unit_options[0][0])
+            unit.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            unit.setObjectName("unitSuffix")
+            unit.setFixedSize(42 if len(unit_options[0][0]) > 2 else 32, CONTROL_HEIGHT - 2)
+            unit.setToolTip("固定单位 / Fixed unit")
+            layout.addWidget(unit)
+            self.unit_suffix = unit
+            unit.setVisible(bool(unit_options[0][0]))
+        self.setFocusProxy(self.edit)
+
+    def _best_unit(self, value: float) -> tuple[str, float]:
+        abs_value = abs(value)
+        for label, multiplier in self.unit_options:
+            if multiplier > 1.0 and abs_value >= multiplier:
+                return label, multiplier
+        return self.unit_options[-1]
+
+    def sizeHint(self):
+        return QSize(super().sizeHint().width(), CONTROL_HEIGHT)
+
+    def value(self):
+        raw = parse_value(self.edit.text())
+        if not isinstance(raw, (int, float)):
+            return raw
+        multiplier = self.unit_combo.currentData() if self.unit_combo else self.unit_options[0][1]
+        return float(raw) * float(multiplier)
+
+
+class VectorValueWidget(QWidget):
+    def __init__(self, value, labels: tuple[str, ...], unit: str | None = None):
+        super().__init__()
+        values = list(value) if isinstance(value, list) else []
+        stacked = len(labels) > 2
+        layout = QVBoxLayout(self) if stacked else QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        self.edits: list[QLineEdit] = []
+        for index, label_text in enumerate(labels):
+            row = QHBoxLayout() if stacked else QVBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(4)
+            label = QLabel(label_text)
+            label.setObjectName("componentLabel")
+            label.setFixedHeight(22)
+            if stacked:
+                label.setFixedWidth(18)
+            row.addWidget(label)
+            value_widget = UnitValueWidget(
+                values[index] if index < len(values) else 0.0,
+                ((unit, 1.0),) if unit else (("", 1.0),),
+                editable_unit=False,
+            )
+            edit = value_widget.edit
+            edit.setAccessibleName(label_text)
+            label.setBuddy(edit)
+            self.edits.append(edit)
+            row.addWidget(value_widget, 1)
+            layout.addLayout(row, 1)
+        self.setSizePolicy(EXPANDING, FIXED)
+        self.setFixedHeight(len(labels) * CONTROL_HEIGHT + (len(labels) - 1) * 10 if stacked else CONTROL_HEIGHT + 26)
+
+    def value(self):
+        return [parse_value(edit.text()) for edit in self.edits]
+
+
+class DirectionBodyWidget(VectorValueWidget):
+    def __init__(self, value, language: str = "zh"):
+        vector = np_vector3(value)
+        lon_rad = np.arctan2(vector[1], vector[0])
+        lat_rad = np.arcsin(np.clip(vector[2] / np.linalg.norm(vector), -1.0, 1.0))
+        labels = ("本体系经度", "本体系纬度") if language == "zh" else ("Body longitude", "Body latitude")
+        super().__init__([float(np.rad2deg(lon_rad)), float(np.rad2deg(lat_rad))], labels, "°")
+        self.lon_edit, self.lat_edit = self.edits
+
+    def value(self):
+        lon = np.deg2rad(float(parse_value(self.lon_edit.text())))
+        lat = np.deg2rad(float(parse_value(self.lat_edit.text())))
+        return [
+            float(np.cos(lat) * np.cos(lon)),
+            float(np.cos(lat) * np.sin(lon)),
+            float(np.sin(lat)),
+        ]
+
+
+def np_vector3(value) -> np.ndarray:
+    array = np.asarray(value, dtype=float)
+    if array.shape != (3,) or not np.isfinite(array).all() or np.linalg.norm(array) == 0.0:
+        return np.array([1.0, 0.0, 0.0], dtype=float)
+    return array
+
+
 class PipelineWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -472,7 +883,8 @@ class PipelineWindow(QMainWindow):
         self.config_data = self._load_initial_config()
         self.current_stage = STAGES[0]
         self.stage_status = {stage: "待执行" for stage in STAGES}
-        self.field_widgets: dict[str, QLineEdit | QComboBox] = {}
+        self.language = "zh"
+        self.field_widgets: dict[str, QWidget] = {}
         self.monostatic_observation = self._is_monostatic_observation()
         self.monostatic_checkbox: QCheckBox | None = None
         self.latest_image_path: Path | None = None
@@ -505,6 +917,7 @@ class PipelineWindow(QMainWindow):
         return disk_config
 
     def _build_ui(self) -> None:
+        self.setStyleSheet(GUI_STYLE)
         root = QWidget()
         self.setCentralWidget(root)
         root_layout = QVBoxLayout(root)
@@ -515,23 +928,36 @@ class PipelineWindow(QMainWindow):
         self.config_path_edit = QLineEdit(str(self.config_path))
         open_btn = QPushButton("打开")
         load_btn = QPushButton("载入")
+        self.open_config_btn = open_btn
+        self.load_config_btn = load_btn
+        self.config_file_label = QLabel("配置文件")
+        self.language_combo = NoWheelComboBox()
+        self.language_combo.addItem("中文", "zh")
+        self.language_combo.addItem("English", "en")
+        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
         open_btn.clicked.connect(self._choose_config)
         load_btn.clicked.connect(self._load_config_from_entry)
-        config_row.addWidget(QLabel("配置文件"))
+        config_row.addWidget(self.config_file_label)
         config_row.addWidget(self.config_path_edit, 1)
         config_row.addWidget(open_btn)
         config_row.addWidget(load_btn)
+        self.language_label = QLabel("语言")
+        config_row.addWidget(self.language_label)
+        config_row.addWidget(self.language_combo)
         root_layout.addLayout(config_row)
 
         run_row = QHBoxLayout()
         self.run_name_edit = QLineEdit(self.config_path.stem)
         self.runs_dir_edit = QLineEdit("runs")
         self.python_edit = QLineEdit(sys.executable)
-        run_row.addWidget(QLabel("实验名"))
+        self.run_name_label = QLabel("实验名")
+        self.runs_dir_label = QLabel("输出目录")
+        self.python_label = QLabel("Python")
+        run_row.addWidget(self.run_name_label)
         run_row.addWidget(self.run_name_edit, 1)
-        run_row.addWidget(QLabel("输出目录"))
+        run_row.addWidget(self.runs_dir_label)
         run_row.addWidget(self.runs_dir_edit, 1)
-        run_row.addWidget(QLabel("Python"))
+        run_row.addWidget(self.python_label)
         run_row.addWidget(self.python_edit, 2)
         root_layout.addLayout(run_row)
 
@@ -549,6 +975,7 @@ class PipelineWindow(QMainWindow):
         sidebar_layout.addWidget(self.stage_box)
 
         self.next_btn = QPushButton("执行下一步")
+        self.next_btn.setObjectName("runButton")
         self.next_btn.clicked.connect(self._run_current_stage)
         self.stop_btn = QPushButton("中止")
         self.stop_btn.clicked.connect(self._stop_current_stage)
@@ -557,6 +984,8 @@ class PipelineWindow(QMainWindow):
         save_btn.clicked.connect(self._save_current_config)
         save_as_btn = QPushButton("另存 JSON")
         save_as_btn.clicked.connect(self._save_config_as_json)
+        self.save_btn = save_btn
+        self.save_as_btn = save_as_btn
         sidebar_layout.addWidget(self.next_btn)
         sidebar_layout.addWidget(self.stop_btn)
         sidebar_layout.addWidget(save_btn)
@@ -564,36 +993,57 @@ class PipelineWindow(QMainWindow):
 
         self.history_table = QTableWidget(0, 3)
         self.history_table.setHorizontalHeaderLabels(("时间", "阶段", "状态"))
-        self.history_table.horizontalHeader().setStretchLastSection(True)
+        history_header = self.history_table.horizontalHeader()
+        history_header.setSectionResizeMode(0, history_header.ResizeMode.Fixed)
+        history_header.setSectionResizeMode(1, history_header.ResizeMode.Stretch)
+        history_header.setSectionResizeMode(2, history_header.ResizeMode.Fixed)
+        self.history_table.setColumnWidth(0, 86)
+        self.history_table.setColumnWidth(2, 54)
+        self.history_table.setWordWrap(False)
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.setEditTriggers(NO_EDIT_TRIGGERS)
         sidebar_layout.addWidget(self.history_table, 1)
 
         main_splitter.addWidget(sidebar)
+        sidebar.setMinimumWidth(230)
+        sidebar.setMaximumWidth(320)
 
         work_splitter = QSplitter(VERTICAL)
+        self.work_splitter = work_splitter
+        self._workspace_layout_key = None
+        self._workspace_layout_timer = QTimer(self)
+        self._workspace_layout_timer.setSingleShot(True)
+        self._workspace_layout_timer.timeout.connect(self._adapt_workspace)
         work_splitter.setChildrenCollapsible(False)
         main_splitter.addWidget(work_splitter)
-        main_splitter.setSizes((280, 1080))
+        main_splitter.setSizes((240, 1100))
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
 
         self.params_group = QGroupBox("阶段参数")
+        self.params_group.setMinimumHeight(240)
         params_outer = QVBoxLayout(self.params_group)
         self.params_scroll = QScrollArea()
         self.params_scroll.setWidgetResizable(True)
         self.params_container = QWidget()
+        self.params_container.setObjectName("parameterCanvas")
         self.params_layout = QVBoxLayout(self.params_container)
-        self.params_layout.setContentsMargins(4, 4, 4, 4)
-        self.params_layout.setSpacing(10)
+        self.params_layout.setContentsMargins(8, 8, 8, 8)
+        self.params_layout.setSpacing(14)
         self.params_scroll.setWidget(self.params_container)
         params_outer.addWidget(self.params_scroll)
         work_splitter.addWidget(self.params_group)
 
         bottom_splitter = QSplitter(HORIZONTAL)
+        self.bottom_splitter = bottom_splitter
         bottom_splitter.setChildrenCollapsible(False)
         work_splitter.addWidget(bottom_splitter)
-        work_splitter.setSizes((520, 300))
+        work_splitter.setSizes((590, 230))
+        work_splitter.setStretchFactor(0, 3)
+        work_splitter.setStretchFactor(1, 1)
 
         log_group = QGroupBox("执行日志")
+        self.log_group = log_group
         log_layout = QVBoxLayout(log_group)
         self.log_edit = QTextEdit()
         self.log_edit.setReadOnly(True)
@@ -601,6 +1051,7 @@ class PipelineWindow(QMainWindow):
         bottom_splitter.addWidget(log_group)
 
         result_group = QGroupBox("结果预览")
+        self.result_group = result_group
         result_layout = QVBoxLayout(result_group)
         result_head = QHBoxLayout()
         self.result_status = QLabel("执行阶段后会在这里显示关键结果。")
@@ -633,15 +1084,108 @@ class PipelineWindow(QMainWindow):
         progress_row.addWidget(self.status_label, 1)
         progress_row.addWidget(self.progress_bar, 2)
         root_layout.addLayout(progress_row)
+        self._apply_language()
+        self._workspace_layout_timer.start(0)
+
+    def _adapt_workspace(self):
+        """Rebalance only on stage/breakpoint changes; preserve manual splitter drags."""
+        if not hasattr(self, "parameter_cards"):
+            return
+        mode = self.parameter_cards.layout_mode
+        key = (self.current_stage, mode)
+        if key == self._workspace_layout_key:
+            return
+        self._workspace_layout_key = key
+        height = self.work_splitter.height()
+        if self.current_stage == "inversion":
+            parameter_height = min(max(240, self.parameter_cards.height() + 80), int(height * 0.55))
+        else:
+            parameter_height = int(height * (0.68 if mode == "wide" else 0.72))
+        self.work_splitter.setSizes((parameter_height, height - parameter_height))
+        width = self.bottom_splitter.width()
+        log_share = 0.34 if mode == "wide" else 0.5
+        self.bottom_splitter.setSizes((int(width * log_share), int(width * (1 - log_share))))
+
+    def _tr(self, zh: str, en: str) -> str:
+        return zh if self.language == "zh" else en
+
+    def _stage_label(self, stage: str) -> str:
+        labels = STAGE_LABELS if self.language == "zh" else STAGE_LABELS_EN
+        return labels[stage]
+
+    def _group_label(self, group_name: str) -> str:
+        labels = GROUP_LABELS if self.language == "zh" else GROUP_LABELS_EN
+        return labels.get(group_name, group_name)
+
+    def _option_label(self, value) -> str:
+        text = "null" if value is None else str(value)
+        return OPTION_LABELS.get(self.language, {}).get(text, text)
+
+    def _status_text(self, value: str) -> str:
+        if self.language == "zh":
+            return value
+        return {
+            "待执行": "Pending",
+            "运行中": "Running",
+            "执行中": "Running",
+            "中止中": "Stopping",
+            "已完成": "Done",
+            "完成": "Done",
+            "已中止": "Stopped",
+            "中止": "Stopped",
+            "失败": "Failed",
+            "成功": "Success",
+        }.get(value, value)
+
+    def _apply_language(self) -> None:
+        self.setWindowTitle(self._tr("自转周期测量流水线", "Rotation Period Measurement Pipeline"))
+        self.config_file_label.setText(self._tr("配置文件", "Config"))
+        self.language_label.setText(self._tr("语言", "Language"))
+        self.open_config_btn.setText(self._tr("打开", "Browse"))
+        self.load_config_btn.setText(self._tr("载入", "Load"))
+        self.run_name_label.setText(self._tr("实验名", "Run Name"))
+        self.runs_dir_label.setText(self._tr("输出目录", "Output Dir"))
+        self.python_label.setText("Python")
+        self.stage_box.setTitle(self._tr("流水线阶段", "Pipeline Stages"))
+        self.next_btn.setText(self._tr("执行下一步", "Run Next Step"))
+        self.stop_btn.setText(self._tr("中止", "Stop"))
+        self.save_btn.setText(self._tr("保存参数", "Save Parameters"))
+        self.save_as_btn.setText(self._tr("另存 JSON", "Save JSON As"))
+        self.history_table.setHorizontalHeaderLabels(
+            (
+                self._tr("时间", "Time"),
+                self._tr("阶段", "Stage"),
+                self._tr("状态", "Status"),
+            )
+        )
+        self.params_group.setTitle(f"{self._stage_label(self.current_stage)} {self._tr('参数', 'Parameters')}")
+        self.log_group.setTitle(self._tr("执行日志", "Log"))
+        self.result_group.setTitle(self._tr("结果预览", "Preview"))
+        self.open_result_btn.setText(self._tr("打开结果", "Open Result"))
+        self.open_3d_btn.setText(self._tr("打开 3D", "Open 3D"))
+        if self.process is None:
+            self.status_label.setText(self._tr("就绪", "Ready"))
+            self.progress_bar.setFormat(self._tr("就绪", "Ready"))
+        self._render_stage_buttons()
+        self._render_current_stage()
+
+    def _on_language_changed(self) -> None:
+        data = self.language_combo.currentData()
+        self.language = data if data in {"zh", "en"} else "zh"
+        self._sync_stage_from_fields()
+        self._apply_language()
+        self._render_history()
 
     def _render_stage_buttons(self) -> None:
         while self.stage_layout.count():
             item = self.stage_layout.takeAt(0)
             widget = item.widget()
             if widget:
+                widget.hide()
                 widget.deleteLater()
         for stage in STAGES:
-            btn = QPushButton(f"{STAGE_LABELS[stage]}  {self.stage_status[stage]}")
+            btn = QPushButton(f"{self._stage_label(stage)}  {self._status_text(self.stage_status[stage])}")
+            btn.setProperty("activeStage", stage == self.current_stage)
             btn.clicked.connect(lambda _checked=False, value=stage: self._select_stage(value))
             self.stage_layout.addWidget(btn)
         self.stage_layout.addStretch(1)
@@ -651,21 +1195,73 @@ class PipelineWindow(QMainWindow):
         self._clear_layout(self.params_layout)
         self.field_widgets.clear()
         self.monostatic_checkbox = None
-        self.params_group.setTitle(f"{STAGE_LABELS[self.current_stage]} 参数")
+        self.params_group.setTitle(f"{self._stage_label(self.current_stage)} {self._tr('参数', 'Parameters')}")
         if self.current_stage == "observation":
-            self.monostatic_checkbox = QCheckBox("单基站观测：接收站沿用发射站参数")
+            self.monostatic_checkbox = QCheckBox(
+                self._tr("单基站观测：接收站沿用发射站参数", "Monostatic: receiver uses transmitter parameters")
+            )
             self.monostatic_checkbox.setChecked(self.monostatic_observation)
             self.monostatic_checkbox.toggled.connect(self._on_monostatic_toggled)
             self.params_layout.addWidget(self.monostatic_checkbox)
         stage_data = self.config_data.get(self.current_stage, {})
-        for group_name, values in self._stage_groups(stage_data):
-            group = QGroupBox(GROUP_LABELS.get(group_name, group_name))
-            grid = QGridLayout(group)
-            grid.setHorizontalSpacing(10)
-            grid.setVerticalSpacing(8)
-            self._render_group_fields(grid, group_name, values)
-            self.params_layout.addWidget(group)
+        self._render_stage_group_boxes(self._stage_groups(stage_data))
         self.params_layout.addStretch(1)
+
+    def _render_stage_group_boxes(self, groups) -> None:
+        # Presentation groups contain original config paths, never new JSON keys.
+        sections = {}
+        for group_name, values in groups:
+            for relative_path, value in self._ordered_group_fields(values):
+                path = relative_path if group_name == "通用参数" else f"{group_name}.{relative_path}"
+                section = group_name
+                if self.current_stage == "echo":
+                    if group_name in {"radar", "waveform"}:
+                        section = "signal"
+                    elif path in {"seed", "chunk_size"}:
+                        section = "compute"
+                elif self.current_stage == "inversion" and group_name == "通用参数":
+                    if path.startswith("stft_"):
+                        section = "spectrum"
+                    elif path.startswith("period_"):
+                        section = "period_search"
+                sections.setdefault(section, []).append((path, value))
+        if self.current_stage == "echo":
+            order = ("通用参数", "target", "signal", "scattering_spot", "compute")
+        elif self.current_stage == "observation":
+            order = ("receive", "target", "transmitter", "receiver", "ephemeris", "solver")
+        else:
+            order = ("spectrum", "period_search")
+        names = sorted(sections, key=lambda name: order.index(name) if name in order else len(order))
+        cards = [self._create_group_box(name, sections[name]) for name in names]
+        self.parameter_cards = ParameterCards(cards, self.current_stage, lambda: self._workspace_layout_timer.start(0))
+        self.params_layout.addWidget(self.parameter_cards)
+
+    def _create_group_box(self, group_name: str, fields) -> QFrame:
+        titles = {
+            "signal": self._tr("雷达与波形", "Radar & Waveform"),
+            "spectrum": self._tr("时频分析", "Time–Frequency Analysis"),
+            "period_search": self._tr("周期搜索", "Period Search"),
+        }
+        title = titles.get(group_name, self._group_label(group_name))
+        if self.current_stage == "echo" and group_name == "通用参数":
+            title = self._tr("模型与散射", "Model & Scattering")
+        group = QFrame()
+        group.setObjectName("parameterCard")
+        group.setProperty("groupName", group_name)
+        group.setAccessibleName(title)
+        outer = QVBoxLayout(group)
+        outer.setContentsMargins(16, 14, 16, 16)
+        outer.setSpacing(14)
+        header = QLabel(title)
+        header.setObjectName("cardTitle")
+        outer.addWidget(header)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(10)
+        self._render_group_fields(grid, group_name, fields)
+        outer.addLayout(grid)
+        group.setSizePolicy(EXPANDING, FIXED)
+        return group
 
     def _stage_groups(self, stage_data: dict):
         groups = []
@@ -679,54 +1275,82 @@ class PipelineWindow(QMainWindow):
                 loose[key] = value
         if loose:
             groups.insert(0, ("通用参数", loose))
-        return groups
+        order = STAGE_GROUP_ORDER.get(self.current_stage, ())
+        return sorted(groups, key=lambda item: order.index(item[0]) if item[0] in order else len(order))
 
-    def _render_group_fields(self, grid: QGridLayout, group_name: str, values: dict) -> None:
+    def _render_group_fields(self, grid: QGridLayout, group_name: str, fields) -> None:
         row = 0
-        compact_col = 0
-        for relative_path, value in self._ordered_group_fields(values):
-            full_path = relative_path if group_name == "通用参数" else f"{group_name}.{relative_path}"
-            label = QLabel(self._display_label(relative_path))
-            widget = self._field_widget(full_path, value)
-            self.field_widgets[full_path] = widget
-
-            if self._is_wide_field(relative_path, value):
-                if compact_col:
-                    row += 1
-                    compact_col = 0
-                grid.addWidget(label, row, 0)
-                grid.addWidget(widget, row, 1, 1, 3)
+        spin_header_added = False
+        for full_path, value in fields:
+            key = full_path.split(".")[-1]
+            is_spin = full_path.startswith("target.spin_pole_")
+            if is_spin and not spin_header_added:
+                header = QLabel(self._tr("自转轴", "Spin Axis"))
+                header.setObjectName("subsectionTitle")
+                grid.addWidget(header, row, 0, 1, 2)
                 row += 1
-            else:
-                col = compact_col * 2
-                grid.addWidget(label, row, col)
-                grid.addWidget(widget, row, col + 1)
-                compact_col += 1
-                if compact_col >= 2:
-                    compact_col = 0
+                spin_header_added = True
+            label = QLabel(self._display_label(full_path))
+            label.setObjectName("fieldLabel")
+            label.setProperty("configPath", full_path)
+            widget = self._field_widget(full_path, value)
+            widget.setToolTip(full_path)
+            widget.setAccessibleName(self._display_label(full_path))
+            label.setBuddy(widget)
+            self.field_widgets[full_path] = widget
+            if isinstance(widget, VectorValueWidget):
+                if not is_spin:
+                    grid.addWidget(label, row, 0, 1, 2)
                     row += 1
-
+                else:
+                    label.deleteLater()
+                grid.addWidget(widget, row, 0, 1, 2)
+                row += 1
+            elif key in {"model_path", "observation_info_path", "pulse_start_s", "start_utc"}:
+                grid.addWidget(label, row, 0, 1, 2)
+                grid.addWidget(widget, row + 1, 0, 1, 2)
+                row += 2
+            else:
+                label.setMinimumWidth(84 if self.language == "zh" else 120)
+                grid.addWidget(label, row, 0)
+                grid.addWidget(widget, row, 1)
+                row += 1
         grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(3, 1)
 
     def _field_widget(self, full_path: str, value):
         key = full_path.split(".")[-1]
         if key in CHOICES or isinstance(value, bool):
             combo = NoWheelComboBox()
-            choices = ("true", "false") if isinstance(value, bool) else self._choices_for_field(full_path)
-            combo.addItems([str(item) for item in choices])
+            choices = (True, False) if isinstance(value, bool) else self._choices_for_field(full_path)
             current = "true" if value is True else "false" if value is False else format_value(value)
-            if current not in [combo.itemText(i) for i in range(combo.count())]:
-                combo.insertItem(0, current)
-            combo.setCurrentText(current)
+            for item in choices:
+                data = "true" if item is True else "false" if item is False else str(item)
+                combo.addItem(self._option_label(data), data)
+            existing_data = [combo.itemData(i) for i in range(combo.count())]
+            if current == "icrs":
+                current = "equatorial"
+            if current not in existing_data:
+                combo.insertItem(0, self._option_label(current), current)
+            index = combo.findData(current)
+            combo.setCurrentIndex(max(0, index))
             if key == "state":
                 combo.currentTextChanged.connect(lambda _text, path=full_path: self._on_state_changed(path))
             if key == "spin_pole_frame":
                 combo.currentTextChanged.connect(lambda _text, path=full_path: self._on_spin_pole_frame_changed(path))
+            if full_path == "waveform.type":
+                combo.currentTextChanged.connect(lambda _text: self._on_waveform_type_changed())
+            if full_path == "scattering_spot.enabled":
+                combo.currentTextChanged.connect(lambda _text: self._on_spot_enabled_changed())
+            self._apply_field_width(combo, full_path, value)
             return combo
 
+        custom = self._custom_value_widget(full_path, value)
+        if custom is not None:
+            self._apply_field_width(custom, full_path, value)
+            return custom
+
         edit = QLineEdit(format_value(value))
-        edit.setMinimumWidth(460 if self._is_wide_field(full_path, value) else 220)
+        self._apply_field_width(edit, full_path, value)
         unit = FIELD_UNITS.get(key)
         if unit:
             edit.setPlaceholderText(unit)
@@ -735,11 +1359,41 @@ class PipelineWindow(QMainWindow):
             edit.setToolTip(f"配置字段：{full_path}")
         return edit
 
+    def _apply_field_width(self, widget: QWidget, full_path: str, value) -> None:
+        widget.setSizePolicy(EXPANDING, FIXED)
+        if isinstance(widget, (QLineEdit, QComboBox)):
+            widget.setMinimumWidth(160)
+            widget.setFixedHeight(CONTROL_HEIGHT)
+        elif isinstance(widget, UnitValueWidget):
+            widget.setMinimumWidth(160)
+
+    def _custom_value_widget(self, full_path: str, value):
+        key = full_path.split(".")[-1]
+        unit = FIELD_UNITS.get(key)
+        if key == "scattering_power" and isinstance(value, list) and len(value) == 2:
+            labels = ("发射照明", "接收散射") if self.language == "zh" else ("Tx", "Rx")
+            return VectorValueWidget(value, labels)
+        if key == "spin_pole_icrs_deg" and isinstance(value, list):
+            labels = ("赤经", "赤纬") if self.language == "zh" else ("RA", "Dec")
+            return VectorValueWidget(value, labels, "°")
+        if key == "spin_pole_ecliptic_deg" and isinstance(value, list):
+            labels = ("黄经", "黄纬") if self.language == "zh" else ("Lon", "Lat")
+            return VectorValueWidget(value, labels, "°")
+        if key == "direction_body" and isinstance(value, list):
+            return DirectionBodyWidget(value, self.language)
+        if isinstance(value, list) and len(value) in {2, 3} and all(isinstance(item, (int, float)) for item in value):
+            labels = ("x", "y", "z")[: len(value)]
+            return VectorValueWidget(value, labels, unit)
+        if key in UNIT_CHOICES and isinstance(value, (int, float)):
+            return UnitValueWidget(value, UNIT_CHOICES[key], editable_unit=True)
+        if unit and (value is None or isinstance(value, (int, float))):
+            return UnitValueWidget(value, ((unit, 1.0),), editable_unit=False)
+        return None
+
     def _display_label(self, relative_path: str) -> str:
         key = relative_path.split(".")[-1]
-        text = FIELD_LABELS.get(key, key)
-        unit = FIELD_UNITS.get(key)
-        return f"{text} ({unit})" if unit else text
+        labels = FIELD_LABELS if self.language == "zh" else FIELD_LABELS_EN
+        return labels.get(key, key)
 
     def _choices_for_field(self, full_path: str) -> tuple[str, ...]:
         key = full_path.split(".")[-1]
@@ -781,30 +1435,66 @@ class PipelineWindow(QMainWindow):
         for key in COMMON_FIELD_ORDER:
             if key in flat:
                 ordered.append((key, flat.pop(key)))
+        if "enabled" in flat:
+            ordered.append(("enabled", flat.pop("enabled")))
+            if values.get("enabled") is False or str(values.get("enabled")).lower() == "false":
+                return ordered
         state = values.get("state")
         if state in STATE_FIELDS:
             for key in STATE_FIELDS[state]:
                 if key in flat:
                     ordered.append((key, flat.pop(key)))
+        spin_frame = str(values.get("spin_pole_frame", "equatorial")).lower()
+        if spin_frame in {"icrs", "equatorial", "equtorial"}:
+            flat.pop("spin_pole_ecliptic_deg", None)
+        elif spin_frame == "ecliptic":
+            flat.pop("spin_pole_icrs_deg", None)
+        waveform_type = values.get("type")
+        if waveform_type == "continuous_wave":
+            for key in ("pulse_width_s", "bandwidth_hz", "pri_s", "first_pulse_start_s", "pulse_count", "pulse_start_s"):
+                flat.pop(key, None)
+        spin_coord_key = "spin_pole_ecliptic_deg" if spin_frame == "ecliptic" else "spin_pole_icrs_deg"
+        for key in (
+            "rotation_period_s",
+            "initial_phase_deg",
+            "spin_pole_frame",
+            spin_coord_key,
+            "direction_body",
+            "radius_deg",
+            "strength",
+            "carrier_frequency_hz",
+            "type",
+            "amplitude",
+            "pulse_width_s",
+            "bandwidth_hz",
+            "pri_s",
+            "first_pulse_start_s",
+            "pulse_count",
+            "pulse_start_s",
+        ):
+            if key in flat:
+                ordered.append((key, flat.pop(key)))
         ordered.extend(flat.items())
         return ordered
-
-    def _is_wide_field(self, relative_path: str, value) -> bool:
-        key = relative_path.split(".")[-1]
-        return isinstance(value, list) or key.endswith("_utc") or key in {
-            "position_m",
-            "position0_m",
-            "velocity_m_s",
-            "spin_pole_icrs_deg",
-            "direction_body",
-            "model_path",
-            "observation_info_path",
-        }
 
     def _migrate_config(self) -> None:
         echo_target = self.config_data.get("echo", {}).get("target")
         if isinstance(echo_target, dict):
-            echo_target.setdefault("spin_pole_frame", "icrs")
+            if str(echo_target.get("spin_pole_frame", "equatorial")).lower() in {"icrs", "equtorial"}:
+                echo_target["spin_pole_frame"] = "equatorial"
+            echo_target.setdefault("spin_pole_frame", "equatorial")
+        echo_spot = self.config_data.get("echo", {}).get("scattering_spot")
+        if isinstance(echo_spot, dict):
+            echo_spot.setdefault("enabled", True)
+            if str(echo_spot.get("enabled", True)).lower() != "false":
+                for key, value in SCATTERING_SPOT_DEFAULTS.items():
+                    echo_spot.setdefault(key, copy.deepcopy(value))
+        echo_waveform = self.config_data.get("echo", {}).get("waveform")
+        if isinstance(echo_waveform, dict) and echo_waveform.get("type") == "chirp_pulse_train":
+            echo_waveform.setdefault("pulse_width_s", 120.0)
+            echo_waveform.setdefault("bandwidth_hz", 4.0)
+            echo_waveform.setdefault("pri_s", 180.0)
+            echo_waveform.setdefault("first_pulse_start_s", 0.0)
 
         observation = self.config_data.get("observation")
         if not isinstance(observation, dict):
@@ -834,6 +1524,7 @@ class PipelineWindow(QMainWindow):
     def _select_stage(self, stage: str) -> None:
         self._sync_stage_from_fields()
         self.current_stage = stage
+        self._render_stage_buttons()
         self._render_current_stage()
 
     def _on_state_changed(self, full_path: str) -> None:
@@ -858,7 +1549,30 @@ class PipelineWindow(QMainWindow):
         if frame == "ecliptic":
             target.setdefault("spin_pole_ecliptic_deg", copy.deepcopy(target.get("spin_pole_icrs_deg", [0.0, 90.0])))
         else:
+            target["spin_pole_frame"] = "equatorial"
             target.setdefault("spin_pole_icrs_deg", copy.deepcopy(target.get("spin_pole_ecliptic_deg", [0.0, 90.0])))
+        self._save_state()
+        self._render_current_stage()
+
+    def _on_waveform_type_changed(self) -> None:
+        self._sync_stage_from_fields()
+        waveform = self.config_data.get("echo", {}).get("waveform")
+        if not isinstance(waveform, dict):
+            return
+        if waveform.get("type") == "chirp_pulse_train":
+            waveform.setdefault("pulse_width_s", 120.0)
+            waveform.setdefault("bandwidth_hz", 4.0)
+            waveform.setdefault("pri_s", 180.0)
+            waveform.setdefault("first_pulse_start_s", 0.0)
+        self._save_state()
+        self._render_current_stage()
+
+    def _on_spot_enabled_changed(self) -> None:
+        self._sync_stage_from_fields()
+        spot = self.config_data.get("echo", {}).get("scattering_spot")
+        if isinstance(spot, dict) and str(spot.get("enabled", True)).lower() != "false":
+            for key, value in SCATTERING_SPOT_DEFAULTS.items():
+                spot.setdefault(key, copy.deepcopy(value))
         self._save_state()
         self._render_current_stage()
 
@@ -896,10 +1610,18 @@ class PipelineWindow(QMainWindow):
         return copy.deepcopy(STATE_DEFAULTS.get(key, ""))
 
     def _sync_stage_from_fields(self) -> None:
-        stage_payload = {}
+        existing = self.config_data.get(self.current_stage, {})
+        stage_payload = copy.deepcopy(existing) if isinstance(existing, dict) else {}
         for path, widget in self.field_widgets.items():
-            text = widget.currentText() if isinstance(widget, QComboBox) else widget.text()
-            assign_path(stage_payload, path, parse_value(text))
+            if hasattr(widget, "value"):
+                value = widget.value()
+            elif isinstance(widget, QComboBox):
+                data = widget.currentData()
+                text = widget.currentText() if data is None else str(data)
+                value = parse_value(text)
+            else:
+                value = parse_value(widget.text())
+            assign_path(stage_payload, path, value)
         self.config_data[self.current_stage] = stage_payload
         if self.current_stage == "observation" and self.monostatic_observation:
             self._apply_monostatic_receiver()
@@ -1074,8 +1796,8 @@ class PipelineWindow(QMainWindow):
         self.next_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self._set_progress(stage, 0, "启动子进程")
-        self.status_label.setText(f"正在执行：{STAGE_LABELS[stage]}")
-        self._append_log(f"\n[{now_text()}] 开始执行 {STAGE_LABELS[stage]}")
+        self.status_label.setText(f"{self._tr('正在执行', 'Running')}: {self._stage_label(stage)}")
+        self._append_log(f"\n[{now_text()}] 开始执行 {self._stage_label(stage)}")
         self._append_log(f"命令：{' '.join(map(str, command))}\n工作目录：{cwd}")
         self._append_log(f"完整原始输出日志：{self.process_log_path}")
         self._append_log(
@@ -1222,7 +1944,7 @@ class PipelineWindow(QMainWindow):
             message = str(payload.get("message", ""))
         except Exception:
             return False
-        label = STAGE_LABELS.get(stage, stage)
+        label = self._stage_label(stage) if stage in STAGES else stage
         self._append_warning(f"[{now_text()}] {label} 警告：{message}")
         return True
 
@@ -1233,13 +1955,13 @@ class PipelineWindow(QMainWindow):
             message = str(payload.get("message", ""))
         except Exception:
             return False
-        label = STAGE_LABELS.get(stage, stage)
+        label = self._stage_label(stage) if stage in STAGES else stage
         self._append_error(f"[{now_text()}] {label} 错误：{message}")
         return True
 
     def _set_progress(self, stage: str, percent: int, message: str) -> None:
         percent = max(0, min(100, int(percent)))
-        label = STAGE_LABELS.get(stage, stage)
+        label = self._stage_label(stage) if stage in STAGES else stage
         self.progress_bar.setValue(percent)
         self.progress_bar.setFormat(f"{percent}%  {message}")
         self.status_label.setText(f"{label}：{message}")
@@ -1271,14 +1993,14 @@ class PipelineWindow(QMainWindow):
         if not stage or not run_dir:
             return
         if self.stop_requested:
-            message = f"{STAGE_LABELS[stage]} 已中止"
+            message = f"{self._stage_label(stage)} 已中止"
             self.stage_status[stage] = "已中止"
             self._append_history(stage, "中止", str(run_dir), message)
             self.status_label.setText(message)
             self.progress_bar.setFormat("已中止")
             self._append_log(f"[{now_text()}] {message}")
         elif exit_code != 0:
-            error = f"{STAGE_LABELS[stage]} 失败，退出码 {exit_code}"
+            error = f"{self._stage_label(stage)} 失败，退出码 {exit_code}"
             self.stage_status[stage] = "失败"
             self._append_history(stage, "失败", "", error)
             self.status_label.setText(error)
@@ -1293,11 +2015,11 @@ class PipelineWindow(QMainWindow):
             next_stage = self._next_stage(stage)
             if next_stage:
                 self.current_stage = next_stage
-                self.status_label.setText(f"{STAGE_LABELS[stage]} 完成，已切换到 {STAGE_LABELS[next_stage]}")
+                self.status_label.setText(f"{self._stage_label(stage)} 完成，已切换到 {self._stage_label(next_stage)}")
                 self._render_current_stage()
             else:
                 self.status_label.setText(f"全部阶段已完成。实验目录：{run_dir}")
-            self._append_log(f"[{now_text()}] {STAGE_LABELS[stage]} 完成。实验目录：{run_dir}")
+            self._append_log(f"[{now_text()}] {self._stage_label(stage)} 完成。实验目录：{run_dir}")
         self._render_stage_buttons()
         self._render_history()
         self.process = None
@@ -1463,12 +2185,18 @@ class PipelineWindow(QMainWindow):
         for row, record in enumerate(rows):
             values = (
                 record.get("time", ""),
-                STAGE_LABELS.get(record.get("stage"), record.get("stage", "")),
-                record.get("status", ""),
+                self._stage_label(record.get("stage")) if record.get("stage") in STAGES else record.get("stage", ""),
+                self._status_text(record.get("status", "")),
             )
             for col, value in enumerate(values):
-                self.history_table.setItem(row, col, QTableWidgetItem(str(value)))
-        self.history_table.resizeColumnsToContents()
+                text = str(value)
+                display = text.replace(" ", "\n", 1) if col == 0 else text
+                if col == 1:
+                    display = text.split(". ", 1)[-1]
+                item = QTableWidgetItem(display)
+                item.setToolTip(text)
+                self.history_table.setItem(row, col, item)
+            self.history_table.setRowHeight(row, 46)
 
     def _append_history(self, stage: str, status: str, run_dir: str, error: str) -> None:
         history = read_json(HISTORY_PATH, [])
@@ -1519,6 +2247,7 @@ class PipelineWindow(QMainWindow):
             widget = item.widget()
             child_layout = item.layout()
             if widget:
+                widget.setParent(None)
                 widget.deleteLater()
             if child_layout:
                 PipelineWindow._clear_layout(child_layout)
@@ -1534,10 +2263,7 @@ class PipelineWindow(QMainWindow):
 def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("自转周期测量流水线")
-    for style_name in ("windowsvista", "windows11", "windows"):
-        if style_name in {name.lower() for name in QStyleFactory.keys()}:
-            app.setStyle(style_name)
-            break
+    configure_gui_style(app)
     window = PipelineWindow()
     window.show()
     sys.exit(app.exec())

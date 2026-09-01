@@ -51,11 +51,12 @@ DEFAULT_CONFIG = {
         "target": {
             "rotation_period_s": 20.0,
             "initial_phase_deg": 17.0,
-            "spin_pole_frame": "icrs",
+            "spin_pole_frame": "equatorial",
             "spin_pole_icrs_deg": [105.0, -66.0],
         },
         "scattering_power": [1.0, 1.0],
         "scattering_spot": {
+            "enabled": True,
             "direction_body": [1.0, 0.25, 0.15],
             "radius_deg": 28.0,
             "strength": 5.0,

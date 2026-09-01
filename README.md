@@ -36,6 +36,26 @@ GUI 会从 `configs/pipeline_example.json` 读取初始参数。点击“执行�
 Plotly 交互预览，缺少 Qt WebEngine 时则退回静态图和外部浏览器打开。
 旧版 Tkinter 入口仍保留为 `python gui_app.py`，主要用于回退。
 
+PySide6 参数页采用固定语义分栏，各卡片按内容定高。观测页常规窗口左栏为目标、
+发射站、接收站，右栏为接收设置、星历查询、求解器；勾选单基站只隐藏接收站，
+不会重新排列其他卡片。宽屏切换为目标、测站、观测与求解三栏；回波页也有专用三栏
+布局，反演页把更多空间留给结果预览。数值与紧凑单位框等高显示，可选单位带下拉箭头。
+同级字段使用一致字体，卡片标题使用浅蓝标题带，自转轴保留二级标题。
+雷达载频与波形合并展示，反演参数分为“时频分析”和“周期搜索”。这些分组只影响
+界面展示，不改变 JSON 配置字段。参数区与日志/预览区之间的分隔条可拖动调整。
+滚动条滑块和勾选状态使用高对比度颜色；下拉列表恢复控件下方展开，原生动画遵循
+Windows 的界面效果支持情况（屏幕下方空间不足时仍可向上展开）。
+
+界面布局和交互回归检查（不修改已保存的 GUI 参数，截图写入 `tmp/`）：
+
+```powershell
+conda activate pytorch
+python tests/test_gui_layout.py
+```
+
+如需同时运行真实短示例流水线，先设置 `$env:GUI_SMOKE_PIPELINE='1'` 再运行上述测试；
+这仅用于功能冒烟验证，不代表正式实验复现。旧版 Tkinter 界面不包含本次布局更新。
+
 GUI 和 `pipeline.py` 使用同一套配置生成规则：运行前会先在
 `runs/<run-name>/configs/` 生成 `experiment.json`、`observation.generated.json`、
 `echo.generated.json` 和 `inversion.generated.json`，再逐阶段调用各子模块脚本。
