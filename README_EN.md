@@ -19,6 +19,21 @@ conda activate pytorch
 python pipeline.py --config configs\pipeline_example.json
 ```
 
+Use the multi-acquisition configuration for chirp pulses:
+
+```powershell
+python pipeline.py --config configs\chirp_smoke.json
+```
+
+This mode no longer applies one sample rate to the whole campaign.
+`receive.acquisitions` defines each short coherent acquisition by start time,
+pulse count, and PRF, while `waveform.fast_sample_rate_hz` applies only inside
+the fast-time receive window. IQ is stored as `[pulse, fast_time]`, with no
+samples allocated in acquisition gaps. Inversion range-compresses each pulse,
+extracts power/range features, and applies Lomb–Scargle at the true, potentially
+irregular pulse epochs. Phase is never stitched across different `coherence_id`
+groups. See [Three-time-axis architecture](docs/three_time_axis_architecture.md).
+
 You can also launch the first-pass desktop GUI and run the pipeline step by step:
 
 ```powershell

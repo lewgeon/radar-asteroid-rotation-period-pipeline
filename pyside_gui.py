@@ -383,6 +383,7 @@ FIELD_LABELS = {
     "start_utc": "开始时间",
     "duration_s": "接收时长",
     "sample_rate_hz": "采样率",
+    "acquisitions": "相干采集计划",
     "tolerance_s": "收敛阈值",
     "max_iter": "最大迭代次数",
     "location": "参考中心",
@@ -414,6 +415,9 @@ FIELD_LABELS = {
     "amplitude": "幅度",
     "pulse_width_s": "脉冲宽度",
     "bandwidth_hz": "Chirp 带宽",
+    "fast_sample_rate_hz": "快时间采样率",
+    "receive_window_start_s": "接收窗起点",
+    "receive_window_duration_s": "接收窗时长",
     "pri_s": "脉冲重复间隔",
     "first_pulse_start_s": "首脉冲起点",
     "pulse_count": "脉冲数量",
@@ -441,6 +445,7 @@ FIELD_LABELS_EN = {
     "start_utc": "Start UTC",
     "duration_s": "Duration",
     "sample_rate_hz": "Sample Rate",
+    "acquisitions": "Coherent Acquisition Schedule",
     "tolerance_s": "Tolerance",
     "max_iter": "Maximum Iterations",
     "location": "Center",
@@ -472,6 +477,9 @@ FIELD_LABELS_EN = {
     "amplitude": "Amplitude",
     "pulse_width_s": "Pulse Width",
     "bandwidth_hz": "Chirp Bandwidth",
+    "fast_sample_rate_hz": "Fast-time Sample Rate",
+    "receive_window_start_s": "Receive Window Start",
+    "receive_window_duration_s": "Receive Window Duration",
     "pri_s": "PRI",
     "first_pulse_start_s": "First Pulse Start",
     "pulse_count": "Pulse Count",
@@ -503,6 +511,9 @@ FIELD_UNITS = {
     "carrier_frequency_hz": "Hz",
     "pulse_width_s": "s",
     "bandwidth_hz": "Hz",
+    "fast_sample_rate_hz": "Hz",
+    "receive_window_start_s": "s",
+    "receive_window_duration_s": "s",
     "pri_s": "s",
     "first_pulse_start_s": "s",
     "snr_db": "dB",
@@ -518,6 +529,7 @@ UNIT_CHOICES = {
     "carrier_frequency_hz": (("GHz", 1.0e9), ("MHz", 1.0e6), ("Hz", 1.0)),
     "bandwidth_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
     "sample_rate_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
+    "fast_sample_rate_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
 }
 CONTROL_HEIGHT = 32
 EDITABLE_UNIT_WIDTH = 76
@@ -565,15 +577,9 @@ QHeaderView::section { background: #edf2f8; border: none; padding: 5px; }
 QProgressBar { border: 1px solid #dce2eb; background: white; border-radius: 4px;
     text-align: center; min-height: 22px; }
 QProgressBar::chunk { background: #b3d2f1; border-radius: 3px; }
-QSplitter::handle { background: #d7e0ea; }
-QSplitter::handle:horizontal { width: 5px; border-left: 1px solid #eef3f8; border-right: 1px solid #a9bbcf; }
-QSplitter::handle:vertical { height: 5px; border-top: 1px solid #eef3f8; border-bottom: 1px solid #a9bbcf; }
-QSplitter::handle:hover { background: #9dbfe5; }
+QSplitter::handle { background: #c9d6e3; border: none; }
+QSplitter::handle:hover { background: #a9c3e2; }
 QSplitter::handle:pressed { background: #3979bf; }
-QSplitter#previewSplitter::handle { background: #c5d5e6; border-left: 1px solid #edf3f8;
-    border-right: 1px solid #7fa8cf; }
-QSplitter#previewSplitter::handle:hover { background: #8fb5dc; border-right-color: #3979bf; }
-QSplitter#previewSplitter::handle:pressed { background: #3979bf; }
 QFrame#resultSidebar { background: white; border: 1px solid #dce2eb; border-radius: 8px; }
 QLabel#resultSidebarTitle { font-size: 16px; font-weight: 600; color: #193b61;
     background: #eff5fc; border: none; border-left: 3px solid #3979bf;
@@ -995,6 +1001,16 @@ class PipelineWindow(QMainWindow):
         self.process_output_buffer = ""
         self.stop_requested = False
 
+        # 提前初始化 QtWebEngine：否则第一次生成结果预览时才创建 QWebEngineView，
+        # 会让主窗口在运行中途重新创建原生表面，表现为“闪一下再刷新”。
+        self._webengine_warmup = None
+        if QWebEngineView is not None:
+            try:
+                self._webengine_warmup = QWebEngineView()
+                self._webengine_warmup.setHtml("<html><body></body></html>")
+            except Exception:
+                self._webengine_warmup = None
+
         self._migrate_config()
         self._build_ui()
         self._render_stage_buttons()
@@ -1118,10 +1134,6 @@ class PipelineWindow(QMainWindow):
 
         work_splitter = QSplitter(VERTICAL)
         self.work_splitter = work_splitter
-        self._workspace_layout_key = None
-        self._workspace_layout_timer = QTimer(self)
-        self._workspace_layout_timer.setSingleShot(True)
-        self._workspace_layout_timer.timeout.connect(self._adapt_workspace)
         work_splitter.setChildrenCollapsible(False)
         work_splitter.setHandleWidth(5)
         main_splitter.addWidget(work_splitter)
@@ -1201,7 +1213,6 @@ class PipelineWindow(QMainWindow):
         progress_row.addWidget(self.progress_bar, 2)
         root_layout.addLayout(progress_row)
         self._apply_language()
-        self._workspace_layout_timer.start(0)
 
     def _on_preview_sidebar_toggled(self, visible: bool) -> None:
         self._set_preview_sidebar_visible(visible)
@@ -1234,22 +1245,6 @@ class PipelineWindow(QMainWindow):
         sidebar_width = max(self.preview_sidebar_width, 300)
         sidebar_width = min(sidebar_width, max(300, total - parameter_min))
         self.preview_splitter.setSizes((max(parameter_min, total - sidebar_width), sidebar_width))
-
-    def _adapt_workspace(self):
-        """Rebalance only on stage/breakpoint changes; preserve manual splitter drags."""
-        if not hasattr(self, "parameter_cards"):
-            return
-        mode = self.parameter_cards.layout_mode
-        key = (self.current_stage, mode)
-        if key == self._workspace_layout_key:
-            return
-        self._workspace_layout_key = key
-        height = self.work_splitter.height()
-        if self.current_stage == "inversion":
-            parameter_height = min(max(240, self.parameter_cards.height() + 80), int(height * 0.55))
-        else:
-            parameter_height = int(height * (0.68 if mode == "wide" else 0.72))
-        self.work_splitter.setSizes((parameter_height, height - parameter_height))
 
     def _tr(self, zh: str, en: str) -> str:
         return zh if self.language == "zh" else en
@@ -1417,7 +1412,8 @@ class PipelineWindow(QMainWindow):
             field_order = (
                 "compute.device", "compute.dtype", "chunk_size",
                 "radar.carrier_frequency_hz", "waveform.type", "waveform.amplitude",
-                "waveform.pulse_width_s", "waveform.bandwidth_hz", "waveform.pri_s",
+                "waveform.pulse_width_s", "waveform.bandwidth_hz", "waveform.fast_sample_rate_hz",
+                "waveform.receive_window_start_s", "waveform.receive_window_duration_s", "waveform.pri_s",
                 "waveform.first_pulse_start_s", "waveform.pulse_count", "waveform.pulse_start_s",
                 "snr_db", "seed", "model_path", "target.rotation_period_s",
                 "target.initial_phase_deg", "target.spin_pole_frame", "target.spin_pole_icrs_deg",
@@ -1432,7 +1428,7 @@ class PipelineWindow(QMainWindow):
             for card in cards:
                 if card.property("groupName") == "receiver":
                     card.hide()
-        self.parameter_cards = ParameterCards(cards, self.current_stage, lambda: self._workspace_layout_timer.start(0))
+        self.parameter_cards = ParameterCards(cards, self.current_stage)
         self.params_layout.addWidget(self.parameter_cards)
 
     def _create_group_box(self, group_name: str, fields) -> QFrame:
@@ -1879,7 +1875,7 @@ class PipelineWindow(QMainWindow):
             flat.pop("spin_pole_icrs_deg", None)
         waveform_type = values.get("type")
         if waveform_type == "continuous_wave":
-            for key in ("pulse_width_s", "bandwidth_hz", "pri_s", "first_pulse_start_s", "pulse_count", "pulse_start_s"):
+            for key in ("pulse_width_s", "bandwidth_hz", "fast_sample_rate_hz", "receive_window_start_s", "receive_window_duration_s", "pri_s", "first_pulse_start_s", "pulse_count", "pulse_start_s"):
                 flat.pop(key, None)
         spin_coord_key = "spin_pole_ecliptic_deg" if spin_frame == "ecliptic" else "spin_pole_icrs_deg"
         for key in (
@@ -1895,6 +1891,9 @@ class PipelineWindow(QMainWindow):
             "amplitude",
             "pulse_width_s",
             "bandwidth_hz",
+            "fast_sample_rate_hz",
+            "receive_window_start_s",
+            "receive_window_duration_s",
             "pri_s",
             "first_pulse_start_s",
             "pulse_count",
@@ -1919,8 +1918,11 @@ class PipelineWindow(QMainWindow):
                     echo_spot.setdefault(key, copy.deepcopy(value))
         echo_waveform = self.config_data.get("echo", {}).get("waveform")
         if isinstance(echo_waveform, dict) and echo_waveform.get("type") == "chirp_pulse_train":
-            echo_waveform.setdefault("pulse_width_s", 120.0)
-            echo_waveform.setdefault("bandwidth_hz", 4.0)
+            echo_waveform.setdefault("pulse_width_s", 20.0e-6)
+            echo_waveform.setdefault("bandwidth_hz", 4.0e6)
+            echo_waveform.setdefault("fast_sample_rate_hz", 8.0e6)
+            echo_waveform.setdefault("receive_window_start_s", -25.0e-6)
+            echo_waveform.setdefault("receive_window_duration_s", 50.0e-6)
             echo_waveform.setdefault("pri_s", 180.0)
             echo_waveform.setdefault("first_pulse_start_s", 0.0)
 
@@ -1998,8 +2000,11 @@ class PipelineWindow(QMainWindow):
         if not isinstance(waveform, dict):
             return
         if waveform.get("type") == "chirp_pulse_train":
-            waveform.setdefault("pulse_width_s", 120.0)
-            waveform.setdefault("bandwidth_hz", 4.0)
+            waveform.setdefault("pulse_width_s", 20.0e-6)
+            waveform.setdefault("bandwidth_hz", 4.0e6)
+            waveform.setdefault("fast_sample_rate_hz", 8.0e6)
+            waveform.setdefault("receive_window_start_s", -25.0e-6)
+            waveform.setdefault("receive_window_duration_s", 50.0e-6)
             waveform.setdefault("pri_s", 180.0)
             waveform.setdefault("first_pulse_start_s", 0.0)
         self._save_state()
@@ -2131,12 +2136,14 @@ class PipelineWindow(QMainWindow):
             write_json(path, export_payload)
             self.config_path = path
             self.config_path_edit.setText(str(path))
-            self.run_name_edit.setText(path.stem)
+            # “另存 JSON”只记录参数快照到哪个文件，不应改动实验名（输出目录）。
+            # 实验名决定 runs/<实验名>/ 下的中间结果位置，若随文件名变化，已算好的
+            # observation_info.npz 就会“消失”，导致同一组视线数据无法复用。
             self._save_state()
         except Exception as exc:
             QMessageBox.critical(self, "保存失败", str(exc))
             return
-        self._append_log(f"[{now_text()}] 当前参数已另存为：{path}")
+        self._append_log(f"[{now_text()}] 当前参数已另存为：{path}（实验名保持为 {self.run_name_edit.text().strip() or self.config_path.stem}）")
         self.status_label.setText(f"已保存 JSON：{path}")
 
     def _save_state(self) -> None:
@@ -2571,12 +2578,11 @@ class PipelineWindow(QMainWindow):
         self._set_preview_sidebar_visible(True)
 
     def _refresh_result_tabs(self, active_stage: str | None = None) -> None:
+        # 仅摘除标签页，保留已构建的页面（尤其是 QWebEngineView）。反复
+        # setParent(None)/deleteLater 会销毁并重建 WebEngine 原生窗口，是
+        # “阶段完成后界面闪一下”的来源。
         while self.result_tabs.count():
-            widget = self.result_tabs.widget(0)
             self.result_tabs.removeTab(0)
-            if widget:
-                widget.setParent(None)
-                widget.deleteLater()
         ordered = [stage for stage in STAGES if stage in self.stage_preview_records]
         has_records = bool(ordered)
         self.result_tabs.setVisible(has_records)
@@ -2586,12 +2592,15 @@ class PipelineWindow(QMainWindow):
         active_index = 0
         for stage in ordered:
             record = self.stage_preview_records[stage]
-            page = self._create_preview_page(
-                record.get("image_path"),
-                record.get("result_path"),
-                record.get("plotly_path"),
-                str(record.get("message") or ""),
-            )
+            page = record.get("page")
+            if page is None:
+                page = self._create_preview_page(
+                    record.get("image_path"),
+                    record.get("result_path"),
+                    record.get("plotly_path"),
+                    str(record.get("message") or ""),
+                )
+                record["page"] = page
             index = self.result_tabs.addTab(page, self._stage_label(stage))
             if stage == active_stage:
                 active_index = index
@@ -2895,7 +2904,31 @@ class PipelineWindow(QMainWindow):
         return STAGES[index + 1]
 
 
+def _prewarm_preview_imports() -> None:
+    """提前导入预览绘图依赖，把首次导入耗时挪到启动阶段。
+
+    观测/回波预览在阶段完成时同步调用 matplotlib 和 plotly，若留到那时才首次
+    导入，会阻塞主线程造成“闪一下再刷新”。这里提前导入（失败也不致命）。
+    """
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt  # noqa: F401
+    except Exception:
+        pass
+    try:
+        import plotly.graph_objects as go  # noqa: F401
+        from plotly.subplots import make_subplots  # noqa: F401
+    except Exception:
+        pass
+
+
 def main() -> None:
+    # 注意：不要设置 QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu"——那会关闭
+    # GPU 合成，导致 Plotly 的 WebGL 渲染报 “WebGL is not supported”，
+    # 观测解算的 3D 预览反而无法显示。这里只保留预导入，缓解阶段完成时的阻塞。
+    _prewarm_preview_imports()
     app = QApplication(sys.argv)
     app.setApplicationName("自转周期测量流水线")
     configure_gui_style(app)

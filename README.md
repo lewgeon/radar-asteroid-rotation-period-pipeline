@@ -21,6 +21,19 @@ conda activate pytorch
 python pipeline.py --config configs\pipeline_example.json
 ```
 
+chirp 脉冲模式请使用多次采集配置：
+
+```powershell
+python pipeline.py --config configs\chirp_smoke.json
+```
+
+该模式不再用一个采样率覆盖整个观测时段。`receive.acquisitions` 定义各次短时
+相干采集的起点、脉冲数和 PRF；`waveform.fast_sample_rate_hz` 只用于脉冲内部
+快时间接收窗。输出 I/Q 的布局为 `[脉冲, 快时间]`，采集间的空档不会分配样本。
+反演模块逐脉冲匹配滤波，提取总功率、距离质心和距离展宽，再按全部脉冲的真实、
+可不均匀历元执行 Lomb–Scargle 搜索。不同 `coherence_id` 之间不进行相位拼接。
+详细数据约定见 [三时间轴架构](docs/three_time_axis_architecture.md)。
+
 也可以启动图形化界面逐步执行：
 
 ```powershell
