@@ -41,6 +41,15 @@ conda activate pytorch
 python pyside_gui.py
 ```
 
+也可以通过模块入口启动：
+
+```powershell
+python -m rotation_gui
+```
+
+GUI 源码已按职责拆分到 `rotation_gui/` 包中，顶层 `pyside_gui.py` 仅保留兼容入口。
+目录职责、依赖方向和扩展方法见 [GUI 工程架构](docs/GUI_ARCHITECTURE.md)。
+
 GUI 会从 `configs/pipeline_example.json` 读取初始参数。点击“执行下一步”会按
 `observation`、`echo`、`inversion` 的顺序逐阶段运行；修改后的参数会保存到
 `.gui_state/pipeline_gui_state.json`，下次打开时自动沿用，并在界面左侧保留最近运行历史。

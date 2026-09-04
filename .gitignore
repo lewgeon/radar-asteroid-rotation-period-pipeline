@@ -9,5 +9,5 @@ __pycache__/
 .claude/
 CLAUDE.md
 .vscode/
-tests/
 configs/
+tests/

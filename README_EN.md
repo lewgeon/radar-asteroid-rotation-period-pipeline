@@ -41,6 +41,17 @@ conda activate pytorch
 python pyside_gui.py
 ```
 
+The package entry point is equivalent:
+
+```powershell
+python -m rotation_gui
+```
+
+GUI implementation is now organized by responsibility under `rotation_gui/`;
+the top-level `pyside_gui.py` remains a compatibility launcher. See the
+[GUI architecture guide](docs/GUI_ARCHITECTURE.md) for module ownership,
+dependency direction, and extension points.
+
 The GUI loads initial values from `configs/pipeline_example.json`. The "执行下一步"
 button runs `observation`, `echo`, and `inversion` one stage at a time. Edited
 parameters are saved under `.gui_state/pipeline_gui_state.json` and reused the
