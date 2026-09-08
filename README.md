@@ -9,8 +9,8 @@
 3. `inversion/`：读取 `echo.npz`，估计自转周期候选值。
 
 顶层 `pipeline.py` 负责把三个模块串联起来。模块之间通过文件交换，不互相导入业务代码。
-实验配置只包含三段业务配置：`observation`、`echo` 和 `inversion`。`observation_info.npz`
-和 `echo.npz` 这类中间路径由流水线自动生成并注入下游模块，不需要手工配置。
+流水线同时读取旧三段式配置和 schema v3 campaign 配置。中间路径由流水线自动生成
+并注入下游模块，不需要手工配置。
 
 ## 快速运行
 
@@ -21,18 +21,31 @@ conda activate pytorch
 python pipeline.py --config configs\pipeline_example.json
 ```
 
-chirp 脉冲模式请使用多次采集配置：
+新的 chirp 发射驱动模式请使用 schema v3 campaign 配置：
 
 ```powershell
-python pipeline.py --config configs\chirp_smoke.json
+python pipeline.py --config configs\campaign_v3_example.json
 ```
 
-该模式不再用一个采样率覆盖整个观测时段。`receive.acquisitions` 定义各次短时
-相干采集的起点、脉冲数和 PRF；`waveform.fast_sample_rate_hz` 只用于脉冲内部
-快时间接收窗。输出 I/Q 的布局为 `[脉冲, 快时间]`，采集间的空档不会分配样本。
-反演模块逐脉冲匹配滤波，提取总功率、距离质心和距离展宽，再按全部脉冲的真实、
-可不均匀历元执行 Lomb–Scargle 搜索。不同 `coherence_id` 之间不进行相位拼接。
-详细数据约定见 [三时间轴架构](docs/three_time_axis_architecture.md)。
+该模式由 `schedule.runs[].tx_start_utc` 定义真实发射起点，PRF 只属于发射波形，
+`receiver.fast_sample_rate_hz` 只属于接收 ADC。观测模块为每个脉冲向前求解
+“发射—质心散射—接收”事件，并把二维 I/Q 的每一行映射到同一个 run 的全局均匀
+ADC 整数栅格。反演模块进行脉冲压缩、单相干组滑动 CPI、距离—多普勒特征提取和
+带逐 run 基线的多谐波周期搜索，并聚合多个独立特征的候选形成共识结果。不同
+`coherence_id` 之间不进行相位拼接。
+
+接收机在每个 run 的接收区间内只有一条采样率为 `fast_sample_rate_hz` 的连续 ADC
+时间轴；“快时间/慢时间”只是后续二维处理坐标，PRF 不是第二个接收采样率。为节省
+脉冲间空白存储，程序先对需要保留的全局 ADC 整数索引生成唯一的一维信号和噪声，
+再按 `row_start_sample` 组织为二维窗口。同一个全局样点即使出现在多行中也保持完全
+相同；若相邻脉冲回波重叠，程序会警告并在该样点叠加全部相关脉冲，而不会静默丢失。
+
+schema v3 的回波模型支持两种输出参考系：默认 `centroid_compensated` 用于先验证
+自转周期算法，直接输出理想质心平动补偿后的数据；`raw_baseband` 保留公共传播时延
+和载波多普勒，用于部署前的真实性验证。二者共享每脉冲三事件星历锚点及默认的
+`per_pulse_linear` 脉内运动模型；传统 `frozen` 走–停模式仅在误差门限允许时使用。
+实现约定见 [schema v3 架构](docs/ARCHITECTURE_V3.md)。旧 `receive.acquisitions`
+仅作为兼容路径保留，不应用于新的 chirp 实验。
 
 也可以启动图形化界面逐步执行：
 
@@ -50,7 +63,9 @@ python -m rotation_gui
 GUI 源码已按职责拆分到 `rotation_gui/` 包中，顶层 `pyside_gui.py` 仅保留兼容入口。
 目录职责、依赖方向和扩展方法见 [GUI 工程架构](docs/GUI_ARCHITECTURE.md)。
 
-GUI 会从 `configs/pipeline_example.json` 读取初始参数。点击“执行下一步”会按
+GUI 会从 `configs/campaign_v3_example.json` 读取新的 chirp 初始参数；既有旧配置仍可
+手动载入。观测页顶部直接显示 Run 计划卡片，可计算可见性、自动选择并回填发射时刻。
+点击“执行下一步”会按
 `observation`、`echo`、`inversion` 的顺序逐阶段运行；修改后的参数会保存到
 `.gui_state/pipeline_gui_state.json`，下次打开时自动沿用，并在界面左侧保留最近运行历史。
 执行阶段时，窗口底部会显示当前子模块的粗略百分比进度和正在处理的步骤。
@@ -58,15 +73,17 @@ GUI 会从 `configs/pipeline_example.json` 读取初始参数。点击“执行�
 Plotly 交互预览，缺少 Qt WebEngine 时则退回静态图和外部浏览器打开。
 旧版 Tkinter 入口仍保留为 `python gui_app.py`，主要用于回退。
 
-PySide6 参数页采用固定双栏，各卡片按内容定高。观测页左栏为目标、
-发射站、接收站，右栏为接收设置、星历查询、求解器；勾选单基站只隐藏接收站，
-不会重新排列其他卡片。最大化窗口仍保持模块双栏，结果预览移到可关闭的右侧栏；
+PySide6 参数页采用固定双栏，各卡片按内容定高。schema v3 观测页将 Run 调度与实时
+时间轴横跨顶部，右栏集中显示可见性、工作体制、发射波形与接收 ADC；最大化窗口仍保持模块双栏，
+结果预览位于可关闭的右侧栏；
 完成阶段后侧栏自动打开，也可用左侧按钮随时显示或关闭。下方区域只保留执行日志。
 数值与紧凑单位框等高显示，可选单位带下拉箭头。
 同级字段使用一致字体，卡片标题使用浅蓝标题带；自转轴、位置、速度及散射方向等
 复合字段使用统一的浅色纵向关系线标示下属条目。
-回波页左栏为“计算设置、雷达参数”，右栏为“目标参数、散射特性”；反演参数分为
-“时频分析”和“周期搜索”。这些分组只影响
+schema v3 的采集参数只有观测页这一处可编辑来源。回波页顶部显示只读采集摘要，
+并在执行前从观测配置生成回波执行快照；回波页只编辑“计算设置、仿真与噪声、
+目标参数、散射特性”。旧三段式配置仍保留原有雷达参数编辑器。反演参数分为
+“Chirp 信号处理”和“周期搜索”；schema v3 chirp 不显示仅供 CW 使用的 STFT 字段。这些分组只影响
 界面展示，不改变 JSON 配置字段。参数区与日志/预览区之间的分隔条可拖动调整。
 滚动条滑块和勾选状态使用高对比度颜色；下拉列表恢复控件下方展开，原生动画遵循
 Windows 的界面效果支持情况（屏幕下方空间不足时仍可向上展开）。

@@ -11,3 +11,5 @@ CLAUDE.md
 .vscode/
 configs/
 tests/
+.pytest_cache/
+docs/

@@ -7,6 +7,22 @@ from ..qt_compat import QFrame, QGridLayout, QLabel, QSize, QSizePolicy, Qt, QTi
 EXPANDING = QSizePolicy.Policy.Expanding
 FIXED = QSizePolicy.Policy.Fixed
 
+LANES_BY_STAGE = {
+    "observation": (
+        ("campaign", "target", "transmitter", "receiver"),
+        ("radar_system", "waveform", "receiver_sampling", "plan", "geometry"),
+    ),
+    "echo": (
+        ("compute", "radar_parameters", "echo_options"),
+        ("target", "scattering_spot"),
+    ),
+    "inversion": (
+        ("spectrum",),
+        ("period_search",),
+    ),
+}
+
+
 class ParameterCards(QWidget):
     """Stable semantic lanes, with explicit compact and wide-screen layouts."""
 
@@ -19,10 +35,11 @@ class ParameterCards(QWidget):
         self.layout_mode = "compact"
         self.column_count = 1
         self.gap = 14
+        self._reflowing = False
         for card in cards:
             card.setParent(self)
             card.ensurePolished()
-        self.card_minimum = max([360] + [card.minimumSizeHint().width() for card in cards])
+        self.card_minimum = max([360] + [card.minimumSizeHint().width() for card in cards] or [360])
         self.setMinimumWidth(self.card_minimum)
         self.setSizePolicy(EXPANDING, FIXED)
         QTimer.singleShot(0, self.reflow)
@@ -32,40 +49,50 @@ class ParameterCards(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.reflow()
+        if not self._reflowing:
+            self.reflow()
 
     def reflow(self):
-        lanes_by_stage = {
-            "observation": (("target", "transmitter", "receiver"), ("receive", "ephemeris", "solver")),
-            "echo": (("compute", "radar_parameters"), ("target", "scattering_spot")),
-            "inversion": (("spectrum",), ("period_search",)),
-        }
-        lanes = lanes_by_stage[self.stage]
-        if self.width() < self.card_minimum * 2 + self.gap:
-            lanes = (tuple(name for lane in lanes for name in lane),)
-        self.layout_mode = "standard" if len(lanes) > 1 else "narrow"
-        self.column_count = len(lanes)
-        lane_map = {name: column for column, lane in enumerate(lanes) for name in lane}
-        cards_by_name = {
-            card.property("groupName"): card for card in self.cards if not card.isHidden()
-        }
-        order = [name for lane in lanes for name in lane if name in cards_by_name]
-        order.extend(name for name in cards_by_name if name not in lane_map)
-        available = min(self.width() - self.gap * (self.column_count - 1), self.column_count * 620)
-        heights = [0] * self.column_count
-        for name in order:
-            card = cards_by_name[name]
-            column = lane_map.get(name, self.column_count - 1)
-            left = column * available // self.column_count + column * self.gap
-            right = (column + 1) * available // self.column_count + column * self.gap
-            card.layout().itemAt(1).layout().invalidate()
-            card.layout().invalidate()
-            height = max(card.sizeHint().height(), card.minimumSizeHint().height())
-            card.setGeometry(left, heights[column], right - left, height)
-            heights[column] += height + self.gap
-        self.setFixedHeight(max(0, max(heights) - self.gap))
-        if self.on_layout_changed:
-            self.on_layout_changed()
+        if self._reflowing or self.width() <= 0:
+            return
+        self._reflowing = True
+        try:
+            lanes = LANES_BY_STAGE.get(self.stage, (("general",),))
+            if self.width() < self.card_minimum * 2 + self.gap:
+                lanes = (tuple(name for lane in lanes for name in lane),)
+            self.layout_mode = "standard" if len(lanes) > 1 else "narrow"
+            self.column_count = len(lanes)
+            lane_map = {name: column for column, lane in enumerate(lanes) for name in lane}
+            cards_by_name = {
+                card.property("groupName"): card for card in self.cards if not card.isHidden()
+            }
+            order = [name for lane in lanes for name in lane if name in cards_by_name]
+            order.extend(name for name in cards_by_name if name not in lane_map)
+            available = min(
+                max(self.width() - self.gap * (self.column_count - 1), self.card_minimum),
+                self.column_count * 620,
+            )
+            heights = [0] * self.column_count
+            for name in order:
+                card = cards_by_name[name]
+                column = lane_map.get(name, self.column_count - 1)
+                left = column * available // self.column_count + column * self.gap
+                right = (column + 1) * available // self.column_count + column * self.gap
+                if card.layout() is not None and card.layout().count() > 1:
+                    item = card.layout().itemAt(1)
+                    if item is not None and item.layout() is not None:
+                        item.layout().invalidate()
+                    card.layout().invalidate()
+                height = max(card.sizeHint().height(), card.minimumSizeHint().height())
+                card.setGeometry(left, heights[column], max(1, right - left), height)
+                heights[column] += height + self.gap
+            target_height = max(0, max(heights or [0]) - self.gap)
+            if self.minimumHeight() != target_height or self.maximumHeight() != target_height:
+                self.setFixedHeight(target_height)
+            if self.on_layout_changed:
+                self.on_layout_changed()
+        finally:
+            self._reflowing = False
 
 class SubsectionPanel(QFrame):
     def __init__(self, title: str, config_path: str | None = None, label_width: int = 84):

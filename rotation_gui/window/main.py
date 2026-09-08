@@ -1,386 +1,546 @@
+"""Staged pipeline GUI: observation → echo → inversion, non-overlapping parameters."""
+
 from __future__ import annotations
 
+import copy
+import json
 import sys
 from pathlib import Path
 
-from .. import qt_compat, storage
+import pipeline
+
+from .. import storage
 from ..qt_compat import (
-    ALIGN_CENTER, HORIZONTAL, NO_EDIT_TRIGGERS, VERTICAL, QCheckBox, QFrame,
-    QGroupBox, QHBoxLayout, QIcon, QLabel, QLineEdit, QMainWindow, QProcess,
-    QProgressBar, QPushButton, QScrollArea, QSize, QSplitter, QTabWidget,
-    QTableWidget, QTextEdit, QTimer, QToolButton, QVBoxLayout, QWidget, Qt,
-)
-from ..schema import GROUP_LABELS, GROUP_LABELS_EN, OPTION_LABELS, STAGES, STAGE_LABELS, STAGE_LABELS_EN
-from ..storage import now_text, read_json
-from ..styling import GUI_STYLE
-from ..widgets import NoWheelComboBox
-
-from .configuration import ConfigurationMixin
-from .execution import ExecutionMixin
-from .forms.rendering import FormRenderingMixin
-from .forms.state import FormStateMixin
-from .history import HistoryMixin
-from .previews import PreviewMixin
-
-
-class PipelineWindow(
-    FormRenderingMixin,
-    FormStateMixin,
-    ConfigurationMixin,
-    ExecutionMixin,
-    PreviewMixin,
-    HistoryMixin,
+    HORIZONTAL,
+    VERTICAL,
+    QCheckBox,
+    QFileDialog,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QMainWindow,
-):
-    def __init__(self):
+    QMessageBox,
+    QProcess,
+    QProcessEnvironment,
+    QProgressBar,
+    QPushButton,
+    QSplitter,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    NOT_RUNNING,
+    Qt,
+)
+from ..schema import STAGE_LABELS, STAGES
+from ..storage import now_text, read_json, write_json
+from ..styling import GUI_STYLE
+from .parameter_form import ParameterForm
+
+
+class PipelineWindow(QMainWindow):
+    """Three-stage parameter ownership with one executable stage at a time."""
+
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("自转周期测量流水线")
-        self.resize(1360, 860)
-        self.setMinimumSize(1100, 700)
+        self.resize(1440, 900)
+        self.setMinimumSize(1100, 720)
+        self.setStyleSheet(GUI_STYLE)
 
         self.config_path = storage.DEFAULT_CONFIG_PATH
-        self.config_source_text = ""
-        self.config_data = self._load_initial_config()
-        self.current_stage = STAGES[0]
-        self.stage_status = {stage: "待执行" for stage in STAGES}
-        self.language = "zh"
-        self.field_widgets: dict[str, QWidget] = {}
-        self.monostatic_observation = False
-        self.monostatic_checkbox: QCheckBox | None = None
-        gui_state = read_json(storage.STATE_PATH, {})
-        self.reuse_observation_info = bool(gui_state.get("reuse_observation_info", False))
-        self.reuse_observation_path = str(gui_state.get("reuse_observation_path", ""))
-        self.reuse_observation_checkbox: QCheckBox | None = None
-        self.reuse_observation_edit: QLineEdit | None = None
-        self.export_observation_btn: QPushButton | None = None
-        self.latest_observation_path: Path | None = None
-        self.latest_image_path: Path | None = None
-        self.latest_result_path: Path | None = None
-        self.latest_plotly_path: Path | None = None
-        self.stage_preview_records: dict[str, dict[str, Path | str | None]] = {}
+        self.config_data = self._load_config(self.config_path)
+        self.current_stage = "observation"
+        self.monostatic_observation = self._is_monostatic_observation()
+        self._bistatic_receiver_backup = None
+        self.stage_status = {stage: "未运行" for stage in STAGES}
         self.process: QProcess | None = None
         self.process_stage: str | None = None
-        self.process_run_dir: Path | None = None
-        self.process_log_path: Path | None = None
         self.process_output_buffer = ""
-        self.stop_requested = False
+        self.process_run_dir: Path | None = None
 
-        # 提前初始化 QtWebEngine：否则第一次生成结果预览时才创建 qt_compat.QWebEngineView，
-        # 会让主窗口在运行中途重新创建原生表面，表现为“闪一下再刷新”。
-        self._webengine_warmup = None
-        if qt_compat.QWebEngineView is not None:
-            try:
-                self._webengine_warmup = qt_compat.QWebEngineView()
-                self._webengine_warmup.setHtml("<html><body></body></html>")
-            except Exception:
-                self._webengine_warmup = None
-
-        self._migrate_config()
         self._build_ui()
-        self._render_stage_buttons()
-        self._render_current_stage()
-        self._render_history()
-        self._append_log(f"[{now_text()}] 当前参数来源：{self.config_source_text}")
+        self._render_stage()
+        self._append_log(f"[{now_text()}] 已载入配置：{self.config_path}")
 
     def _build_ui(self) -> None:
-        self.setStyleSheet(GUI_STYLE)
         root = QWidget()
         self.setCentralWidget(root)
-        root_layout = QVBoxLayout(root)
-        root_layout.setContentsMargins(14, 12, 14, 10)
-        root_layout.setSpacing(10)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+
+        toolbar = QFrame()
+        toolbar.setObjectName("toolbarPanel")
+        toolbar_layout = QVBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(14, 12, 14, 12)
+        toolbar_layout.setSpacing(10)
 
         config_row = QHBoxLayout()
         self.config_path_edit = QLineEdit(str(self.config_path))
-        open_btn = QPushButton("打开")
-        load_btn = QPushButton("载入")
-        self.open_config_btn = open_btn
-        self.load_config_btn = load_btn
-        self.config_file_label = QLabel("配置文件")
-        self.language_combo = NoWheelComboBox()
-        self.language_combo.addItem("中文", "zh")
-        self.language_combo.addItem("English", "en")
-        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
-        open_btn.clicked.connect(self._choose_config)
-        load_btn.clicked.connect(self._load_config_from_entry)
-        config_row.addWidget(self.config_file_label)
+        self.browse_btn = QPushButton("打开")
+        self.load_btn = QPushButton("载入")
+        self.save_btn = QPushButton("保存")
+        self.save_as_btn = QPushButton("另存为")
+        self.validate_btn = QPushButton("校验")
+        config_row.addWidget(QLabel("配置文件"))
         config_row.addWidget(self.config_path_edit, 1)
-        config_row.addWidget(open_btn)
-        config_row.addWidget(load_btn)
-        self.language_label = QLabel("语言")
-        config_row.addWidget(self.language_label)
-        config_row.addWidget(self.language_combo)
-        self.preview_toggle_btn = QToolButton()
-        self.preview_toggle_btn.setObjectName("previewToggle")
-        self.preview_toggle_btn.setCheckable(True)
-        self.preview_toggle_btn.setFixedSize(32, 32)
-        self.preview_toggle_btn.setIcon(QIcon(str(storage.ROOT / "assets/gui/sidebar-toggle.svg")))
-        self.preview_toggle_btn.setIconSize(QSize(18, 18))
-        self.preview_toggle_btn.setToolTip(self._tr("显示结果侧栏", "Show Result Sidebar"))
-        self.preview_toggle_btn.toggled.connect(self._on_preview_sidebar_toggled)
-        config_row.addWidget(self.preview_toggle_btn)
-        root_layout.addLayout(config_row)
+        for button in (
+            self.browse_btn,
+            self.load_btn,
+            self.save_btn,
+            self.save_as_btn,
+            self.validate_btn,
+        ):
+            config_row.addWidget(button)
+        toolbar_layout.addLayout(config_row)
 
         run_row = QHBoxLayout()
         self.run_name_edit = QLineEdit(self.config_path.stem)
         self.runs_dir_edit = QLineEdit("runs")
         self.python_edit = QLineEdit(sys.executable)
-        self.run_name_label = QLabel("实验名")
-        self.runs_dir_label = QLabel("输出目录")
-        self.python_label = QLabel("Python")
-        run_row.addWidget(self.run_name_label)
+        self.run_btn = QPushButton("运行当前阶段")
+        self.run_btn.setObjectName("runButton")
+        self.run_all_btn = QPushButton("运行完整 pipeline")
+        self.stop_btn = QPushButton("中止")
+        self.stop_btn.setEnabled(False)
+        run_row.addWidget(QLabel("实验名"))
         run_row.addWidget(self.run_name_edit, 1)
-        run_row.addWidget(self.runs_dir_label)
+        run_row.addWidget(QLabel("输出目录"))
         run_row.addWidget(self.runs_dir_edit, 1)
-        run_row.addWidget(self.python_label)
+        run_row.addWidget(QLabel("Python"))
         run_row.addWidget(self.python_edit, 2)
-        root_layout.addLayout(run_row)
+        run_row.addWidget(self.run_btn)
+        run_row.addWidget(self.run_all_btn)
+        run_row.addWidget(self.stop_btn)
+        toolbar_layout.addLayout(run_row)
+        layout.addWidget(toolbar)
 
         main_splitter = QSplitter(HORIZONTAL)
         main_splitter.setChildrenCollapsible(False)
         main_splitter.setHandleWidth(5)
-        root_layout.addWidget(main_splitter, 1)
+        layout.addWidget(main_splitter, 1)
 
-        sidebar = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 8, 0)
-        sidebar_layout.setSpacing(8)
-        self.stage_box = QGroupBox("流水线阶段")
-        self.stage_layout = QVBoxLayout(self.stage_box)
-        self.stage_layout.setSpacing(6)
-        sidebar_layout.addWidget(self.stage_box)
+        left = QFrame()
+        left.setObjectName("workPanel")
+        left.setMinimumWidth(180)
+        left.setMaximumWidth(320)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(8)
+        left_title = QLabel("计算阶段")
+        left_title.setObjectName("panelTitle")
+        left_layout.addWidget(left_title)
+        self.stage_buttons = {}
+        self.stage_status_labels = {}
+        for stage in STAGES:
+            button = QPushButton(STAGE_LABELS[stage])
+            button.setProperty("activeStage", stage == self.current_stage)
+            button.setMinimumHeight(42)
+            button.clicked.connect(lambda _checked=False, name=stage: self._select_stage(name))
+            left_layout.addWidget(button)
+            self.stage_buttons[stage] = button
+            status = QLabel(f"状态：{self.stage_status[stage]}")
+            status.setObjectName("panelHint")
+            left_layout.addWidget(status)
+            self.stage_status_labels[stage] = status
+        left_layout.addStretch(1)
+        main_splitter.addWidget(left)
 
-        self.next_btn = QPushButton("执行下一步")
-        self.next_btn.setObjectName("runButton")
-        self.next_btn.clicked.connect(self._run_current_stage)
-        self.stop_btn = QPushButton("中止")
-        self.stop_btn.clicked.connect(self._stop_current_stage)
-        self.stop_btn.setEnabled(False)
-        save_btn = QPushButton("保存参数")
-        save_btn.clicked.connect(self._save_current_config)
-        save_as_btn = QPushButton("另存 JSON")
-        save_as_btn.clicked.connect(self._save_config_as_json)
-        self.save_btn = save_btn
-        self.save_as_btn = save_as_btn
-        sidebar_layout.addWidget(self.next_btn)
-        sidebar_layout.addWidget(self.stop_btn)
-        sidebar_layout.addWidget(save_btn)
-        sidebar_layout.addWidget(save_as_btn)
-
-        self.history_table = QTableWidget(0, 3)
-        self.history_table.setHorizontalHeaderLabels(("时间", "阶段", "状态"))
-        history_header = self.history_table.horizontalHeader()
-        history_header.setSectionResizeMode(0, history_header.ResizeMode.Fixed)
-        history_header.setSectionResizeMode(1, history_header.ResizeMode.Stretch)
-        history_header.setSectionResizeMode(2, history_header.ResizeMode.Fixed)
-        self.history_table.setColumnWidth(0, 86)
-        self.history_table.setColumnWidth(2, 54)
-        self.history_table.setWordWrap(False)
-        self.history_table.verticalHeader().setVisible(False)
-        self.history_table.setEditTriggers(NO_EDIT_TRIGGERS)
-        sidebar_layout.addWidget(self.history_table, 1)
-
-        main_splitter.addWidget(sidebar)
-        sidebar.setMinimumWidth(230)
-        sidebar.setMaximumWidth(320)
+        work_column = QWidget()
+        work_column_layout = QVBoxLayout(work_column)
+        work_column_layout.setContentsMargins(0, 0, 0, 0)
+        work_column_layout.setSpacing(8)
 
         work_splitter = QSplitter(VERTICAL)
-        self.work_splitter = work_splitter
         work_splitter.setChildrenCollapsible(False)
         work_splitter.setHandleWidth(5)
-        main_splitter.addWidget(work_splitter)
-        main_splitter.setSizes((240, 1100))
-        main_splitter.setStretchFactor(0, 0)
-        main_splitter.setStretchFactor(1, 1)
+        work_column_layout.addWidget(work_splitter, 1)
 
-        top_region = QWidget()
-        top_region_layout = QHBoxLayout(top_region)
-        top_region_layout.setContentsMargins(0, 0, 0, 0)
-        top_region_layout.setSpacing(0)
+        center = QFrame()
+        center.setObjectName("workPanel")
+        center_layout = QVBoxLayout(center)
+        center_layout.setContentsMargins(14, 12, 14, 12)
+        center_layout.setSpacing(8)
+        self.stage_title = QLabel()
+        self.stage_title.setObjectName("panelTitle")
+        center_layout.addWidget(self.stage_title)
+        self.monostatic_checkbox = QCheckBox("单基站观测：接收站沿用发射站参数")
+        self.monostatic_checkbox.setChecked(self.monostatic_observation)
+        self.monostatic_checkbox.toggled.connect(self._on_monostatic_toggled)
+        center_layout.addWidget(self.monostatic_checkbox)
+        self.parameter_form = ParameterForm()
+        center_layout.addWidget(self.parameter_form, 1)
+        work_splitter.addWidget(center)
 
-        self.preview_splitter = QSplitter(HORIZONTAL)
-        self.preview_splitter.setObjectName("previewSplitter")
-        self.preview_splitter.setChildrenCollapsible(False)
-        self.preview_splitter.setHandleWidth(5)
-        self.preview_splitter.splitterMoved.connect(self._remember_preview_sidebar_width)
-        self.preview_sidebar_width = 500
-
-        self.params_group = QGroupBox("阶段参数")
-        self.params_group.setMinimumHeight(240)
-        self.params_group.setMinimumWidth(380)
-        params_outer = QVBoxLayout(self.params_group)
-        self.params_scroll = QScrollArea()
-        self.params_scroll.setWidgetResizable(True)
-        self.params_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.params_container = QWidget()
-        self.params_container.setObjectName("parameterCanvas")
-        self.params_layout = QVBoxLayout(self.params_container)
-        self.params_layout.setContentsMargins(8, 8, 8, 8)
-        self.params_layout.setSpacing(14)
-        self.params_scroll.setWidget(self.params_container)
-        params_outer.addWidget(self.params_scroll)
-        self.preview_splitter.addWidget(self.params_group)
-
-        self.result_sidebar = QFrame()
-        self.result_sidebar.setObjectName("resultSidebar")
-        self.result_sidebar.setMinimumWidth(300)
-        result_layout = QVBoxLayout(self.result_sidebar)
-        result_layout.setContentsMargins(12, 12, 12, 12)
-        result_layout.setSpacing(10)
-        self.result_sidebar_title = QLabel("结果预览")
-        self.result_sidebar_title.setObjectName("resultSidebarTitle")
-        result_layout.addWidget(self.result_sidebar_title)
-        self.result_tabs = QTabWidget()
-        result_layout.addWidget(self.result_tabs, 1)
-        self.empty_preview_label = QLabel("绘制结果会在此显示。")
-        self.empty_preview_label.setAlignment(ALIGN_CENTER)
-        self.empty_preview_label.setWordWrap(True)
-        result_layout.addWidget(self.empty_preview_label, 1)
-        self.result_sidebar.hide()
-        self.preview_splitter.addWidget(self.result_sidebar)
-        self.preview_splitter.setStretchFactor(0, 1)
-        self.preview_splitter.setStretchFactor(1, 0)
-        top_region_layout.addWidget(self.preview_splitter, 1)
-
-        work_splitter.addWidget(top_region)
-
-        work_splitter.addWidget(log_group := QGroupBox("执行日志"))
+        log_group = QGroupBox("执行日志")
+        self.log_group = log_group
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(10, 12, 10, 10)
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMinimumHeight(120)
+        log_layout.addWidget(self.log)
+        work_splitter.addWidget(log_group)
         work_splitter.setSizes((590, 230))
         work_splitter.setStretchFactor(0, 3)
         work_splitter.setStretchFactor(1, 1)
 
-        self.log_group = log_group
-        log_layout = QVBoxLayout(log_group)
-        self.log_edit = QTextEdit()
-        self.log_edit.setReadOnly(True)
-        log_layout.addWidget(self.log_edit)
-
         progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(2, 0, 2, 0)
         self.status_label = QLabel("就绪")
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("就绪")
+        self.status_label.setObjectName("statusText")
+        self.status_label.setWordWrap(True)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("就绪")
+        self.progress.setMinimumHeight(26)
         progress_row.addWidget(self.status_label, 1)
-        progress_row.addWidget(self.progress_bar, 2)
-        root_layout.addLayout(progress_row)
-        self._apply_language()
+        progress_row.addWidget(self.progress, 2)
+        work_column_layout.addLayout(progress_row)
 
-    def _on_preview_sidebar_toggled(self, visible: bool) -> None:
-        self._set_preview_sidebar_visible(visible)
+        main_splitter.addWidget(work_column)
+        main_splitter.setSizes((220, 1100))
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
 
-    def _set_preview_sidebar_visible(self, visible: bool) -> None:
-        if not visible and hasattr(self, "preview_splitter") and self.result_sidebar.isVisible():
-            self._remember_preview_sidebar_width()
-        self.result_sidebar.setVisible(visible)
-        if visible and hasattr(self, "preview_splitter"):
-            QTimer.singleShot(0, self._restore_preview_sidebar_width)
-        self.preview_toggle_btn.blockSignals(True)
-        self.preview_toggle_btn.setChecked(visible)
-        self.preview_toggle_btn.setToolTip(
-            self._tr("隐藏结果侧栏", "Hide Result Sidebar") if visible else self._tr("显示结果侧栏", "Show Result Sidebar")
+        self.browse_btn.clicked.connect(self._choose_config)
+        self.load_btn.clicked.connect(self._load_config_from_entry)
+        self.save_btn.clicked.connect(self._save_config)
+        self.save_as_btn.clicked.connect(self._save_config_as)
+        self.validate_btn.clicked.connect(self._validate_config)
+        self.run_btn.clicked.connect(self._run_current_stage)
+        self.run_all_btn.clicked.connect(self._run_full_pipeline)
+        self.stop_btn.clicked.connect(self._stop_pipeline)
+
+    def _load_config(self, path: Path) -> dict:
+        return pipeline.normalize_parameter_ownership(
+            pipeline.pipeline_config_from_any(read_json(path, {}))
         )
-        self.preview_toggle_btn.blockSignals(False)
 
-    def _remember_preview_sidebar_width(self, *_args) -> None:
-        if not hasattr(self, "preview_splitter"):
+    def _is_monostatic_observation(self) -> bool:
+        observation = self.config_data.get("observation", {})
+        transmitter = observation.get("transmitter")
+        receiver = observation.get("receiver")
+        return isinstance(transmitter, dict) and isinstance(receiver, dict) and transmitter == receiver
+
+    def _apply_monostatic_receiver(self) -> None:
+        observation = self.config_data.setdefault("observation", {})
+        transmitter = observation.get("transmitter")
+        if isinstance(transmitter, dict):
+            observation["receiver"] = copy.deepcopy(transmitter)
+
+    def _on_monostatic_toggled(self, checked: bool) -> None:
+        try:
+            if self.current_stage == "observation":
+                self._sync_current_stage(apply_monostatic=False)
+        except Exception:
+            pass
+        self.monostatic_observation = bool(checked)
+        observation = self.config_data.setdefault("observation", {})
+        if self.monostatic_observation:
+            receiver = observation.get("receiver")
+            if isinstance(receiver, dict):
+                self._bistatic_receiver_backup = copy.deepcopy(receiver)
+            self._apply_monostatic_receiver()
+        elif self._bistatic_receiver_backup is not None:
+            observation["receiver"] = copy.deepcopy(self._bistatic_receiver_backup)
+        self._render_stage(preserve_scroll=True)
+        self.monostatic_checkbox.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.config_path_edit.deselect()
+
+    def _sync_current_stage(self, *, apply_monostatic: bool = True) -> None:
+        synced = self.parameter_form.collect()
+        if self.current_stage == "observation":
+            observation = synced.setdefault("observation", {})
+            if self.monostatic_observation and "receiver" not in observation:
+                previous = self.config_data.get("observation", {}).get("receiver")
+                if isinstance(previous, dict):
+                    observation["receiver"] = copy.deepcopy(previous)
+        self.config_data = pipeline.normalize_parameter_ownership(synced)
+        if apply_monostatic and self.current_stage == "observation" and self.monostatic_observation:
+            self._apply_monostatic_receiver()
+
+    def _select_stage(self, stage: str) -> None:
+        if stage == self.current_stage:
             return
-        sizes = self.preview_splitter.sizes()
-        if len(sizes) > 1 and sizes[1] > 0:
-            self.preview_sidebar_width = sizes[1]
-
-    def _restore_preview_sidebar_width(self) -> None:
-        if not self.result_sidebar.isVisible():
+        try:
+            self._sync_current_stage()
+        except Exception as exc:
+            QMessageBox.critical(self, "参数错误", str(exc))
             return
-        total = max(self.preview_splitter.width(), 900)
-        parameter_min = max(getattr(self.parameter_cards, "card_minimum", 360), 360) if hasattr(self, "parameter_cards") else 360
-        sidebar_width = max(self.preview_sidebar_width, 300)
-        sidebar_width = min(sidebar_width, max(300, total - parameter_min))
-        self.preview_splitter.setSizes((max(parameter_min, total - sidebar_width), sidebar_width))
+        self.current_stage = stage
+        self._render_stage(preserve_scroll=False)
+        self.stage_buttons[stage].setFocus(Qt.FocusReason.OtherFocusReason)
+        self.config_path_edit.deselect()
 
-    def _tr(self, zh: str, en: str) -> str:
-        return zh if self.language == "zh" else en
+    def _render_stage(self, *, preserve_scroll: bool = False) -> None:
+        for stage, button in self.stage_buttons.items():
+            button.setProperty("activeStage", stage == self.current_stage)
+            button.style().unpolish(button)
+            button.style().polish(button)
+            self.stage_status_labels[stage].setText(f"状态：{self.stage_status[stage]}")
+        title = STAGE_LABELS[self.current_stage]
+        self.stage_title.setText(title)
+        self.monostatic_checkbox.setVisible(self.current_stage == "observation")
+        self.monostatic_checkbox.blockSignals(True)
+        self.monostatic_checkbox.setChecked(self.monostatic_observation)
+        self.monostatic_checkbox.blockSignals(False)
+        self.parameter_form.render(
+            self.config_data,
+            stage=self.current_stage,
+            monostatic=self.monostatic_observation,
+            preserve_scroll=preserve_scroll,
+        )
+        self.run_btn.setText(f"运行：{title.split('. ')[-1]}")
+        self.config_path_edit.deselect()
 
-    def _stage_label(self, stage: str) -> str:
-        labels = STAGE_LABELS if self.language == "zh" else STAGE_LABELS_EN
-        return labels[stage]
+    def _choose_config(self) -> None:
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "选择 pipeline JSON", str(storage.ROOT), "JSON files (*.json);;All files (*)"
+        )
+        if filename:
+            self.config_path_edit.setText(filename)
+            self._load_config_from_entry()
 
-    def _group_label(self, group_name: str) -> str:
-        labels = GROUP_LABELS if self.language == "zh" else GROUP_LABELS_EN
-        return labels.get(group_name, group_name)
+    def _load_config_from_entry(self) -> None:
+        try:
+            path = Path(self.config_path_edit.text()).expanduser()
+            if not path.is_absolute():
+                path = storage.ROOT / path
+            self.config_path = path.resolve()
+            self.config_data = self._load_config(self.config_path)
+            self.monostatic_observation = self._is_monostatic_observation()
+            self.run_name_edit.setText(self.config_path.stem)
+            self.stage_status = {stage: "未运行" for stage in STAGES}
+            self._render_stage()
+            self._append_log(f"[{now_text()}] 已载入配置：{self.config_path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "载入失败", str(exc))
 
-    def _option_label(self, value) -> str:
-        text = "null" if value is None else str(value)
-        return OPTION_LABELS.get(self.language, {}).get(text, text)
-
-    def _status_text(self, value: str) -> str:
-        if self.language == "zh":
-            return value
-        return {
-            "待执行": "Pending",
-            "运行中": "Running",
-            "执行中": "Running",
-            "中止中": "Stopping",
-            "已完成": "Done",
-            "完成": "Done",
-            "已中止": "Stopped",
-            "中止": "Stopped",
-            "失败": "Failed",
-            "成功": "Success",
-        }.get(value, value)
-
-    def _apply_language(self) -> None:
-        self.setWindowTitle(self._tr("自转周期测量流水线", "Rotation Period Measurement Pipeline"))
-        self.config_file_label.setText(self._tr("配置文件", "Config"))
-        self.language_label.setText(self._tr("语言", "Language"))
-        self.open_config_btn.setText(self._tr("打开", "Browse"))
-        self.load_config_btn.setText(self._tr("载入", "Load"))
-        self.run_name_label.setText(self._tr("实验名", "Run Name"))
-        self.runs_dir_label.setText(self._tr("输出目录", "Output Dir"))
-        self.python_label.setText("Python")
-        self.stage_box.setTitle(self._tr("流水线阶段", "Pipeline Stages"))
-        self.next_btn.setText(self._tr("执行下一步", "Run Next Step"))
-        self.stop_btn.setText(self._tr("中止", "Stop"))
-        self.save_btn.setText(self._tr("保存参数", "Save Parameters"))
-        self.save_as_btn.setText(self._tr("另存 JSON", "Save JSON As"))
-        self.history_table.setHorizontalHeaderLabels(
-            (
-                self._tr("时间", "Time"),
-                self._tr("阶段", "Stage"),
-                self._tr("状态", "Status"),
+    def _validate_config(self) -> bool:
+        try:
+            self._sync_current_stage()
+            config = pipeline.normalize_parameter_ownership(self.config_data)
+            pipeline.require_sections(config)
+            pipeline.prepared_configs(
+                config, pipeline.abs_path(self.runs_dir_edit.text() or "runs") / "validation"
             )
+        except Exception as exc:
+            QMessageBox.critical(self, "配置错误", str(exc))
+            return False
+        self._append_log(f"[{now_text()}] 配置校验通过。")
+        self.status_label.setText("配置校验通过")
+        return True
+
+    def _save_config(self) -> None:
+        try:
+            self._sync_current_stage()
+            write_json(self.config_path, self.config_data)
+            self._append_log(f"[{now_text()}] 已保存：{self.config_path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "保存失败", str(exc))
+
+    def _save_config_as(self) -> None:
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "另存 pipeline JSON", str(self.config_path), "JSON files (*.json);;All files (*)"
         )
-        self.params_group.setTitle(f"{self._stage_label(self.current_stage)} {self._tr('参数', 'Parameters')}")
-        self.log_group.setTitle(self._tr("执行日志", "Log"))
-        self.result_sidebar_title.setText(self._tr("结果预览", "Preview"))
-        self.empty_preview_label.setText(self._tr("绘制结果会在此显示。", "Rendered results will appear here."))
-        self._set_preview_sidebar_visible(self.result_sidebar.isVisible())
-        self._refresh_result_tabs()
-        if self.process is None:
-            self.status_label.setText(self._tr("就绪", "Ready"))
-            self.progress_bar.setFormat(self._tr("就绪", "Ready"))
-        self._render_stage_buttons()
-        self._render_current_stage()
+        if not filename:
+            return
+        self.config_path = Path(filename).resolve()
+        self.config_path_edit.setText(str(self.config_path))
+        self._save_config()
 
-    def _on_language_changed(self) -> None:
-        data = self.language_combo.currentData()
-        self.language = data if data in {"zh", "en"} else "zh"
-        self._sync_stage_from_fields()
-        self._apply_language()
-        self._render_history()
+    def _run_directory(self) -> Path:
+        run_name = self.run_name_edit.text().strip() or self.config_path.stem
+        runs_dir = self.runs_dir_edit.text().strip() or "runs"
+        return pipeline.abs_path(runs_dir) / run_name
 
-    def _render_stage_buttons(self) -> None:
-        while self.stage_layout.count():
-            item = self.stage_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.hide()
-                widget.deleteLater()
-        self.stage_buttons = {}
-        for stage in STAGES:
-            btn = QPushButton(f"{self._stage_label(stage)}  {self._status_text(self.stage_status[stage])}")
-            btn.setProperty("activeStage", stage == self.current_stage)
-            btn.clicked.connect(lambda _checked=False, value=stage: self._select_stage(value))
-            self.stage_layout.addWidget(btn)
-            self.stage_buttons[stage] = btn
-        self.stage_layout.addStretch(1)
+    def _run_current_stage(self) -> None:
+        self._start_stages([self.current_stage])
+
+    def _run_full_pipeline(self) -> None:
+        self._start_stages(list(STAGES))
+
+    def _start_stages(self, stages: list[str]) -> None:
+        if self.process and self.process.state() != NOT_RUNNING:
+            QMessageBox.information(self, "正在运行", "当前已有任务在运行。")
+            return
+        if not self._validate_config():
+            return
+        self._pending_stages = list(stages)
+        self._run_next_pending_stage()
+
+    def _run_next_pending_stage(self) -> None:
+        if not getattr(self, "_pending_stages", None):
+            self.run_btn.setEnabled(True)
+            self.run_all_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.status_label.setText("全部完成")
+            return
+        stage = self._pending_stages.pop(0)
+        try:
+            run_dir = self._run_directory()
+            config_dir = run_dir / "configs"
+            prepared = pipeline.prepared_configs(self.config_data, run_dir)
+            write_json(config_dir / "experiment.json", self.config_data)
+            write_json(config_dir / "observation.generated.json", prepared["observation"])
+            write_json(config_dir / "echo.generated.json", prepared["echo"])
+            write_json(config_dir / "inversion.generated.json", prepared["inversion"])
+            write_json(run_dir / "manifest.json", pipeline.build_manifest(self.config_data))
+            python_exe = self.python_edit.text().strip() or sys.executable
+            command, cwd, env = self._stage_command(stage, python_exe, config_dir, prepared)
+        except Exception as exc:
+            QMessageBox.critical(self, "启动失败", str(exc))
+            self._pending_stages = []
+            return
+
+        self.process = QProcess(self)
+        self.process_stage = stage
+        self.process_run_dir = run_dir
+        self.process_output_buffer = ""
+        self.process.setWorkingDirectory(str(cwd))
+        process_env = QProcessEnvironment.systemEnvironment()
+        for key, value in env.items():
+            if value is not None:
+                process_env.insert(str(key), str(value))
+        self.process.setProcessEnvironment(process_env)
+        self.process.readyReadStandardOutput.connect(self._read_process_output)
+        self.process.readyReadStandardError.connect(self._read_process_output)
+        self.process.finished.connect(self._process_finished)
+        self.process.errorOccurred.connect(self._process_error)
+        self.run_btn.setEnabled(False)
+        self.run_all_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.stage_status[stage] = "执行中"
+        self._render_stage_status_only()
+        self.progress.setValue(0)
+        self.progress.setFormat("运行中")
+        self.status_label.setText(f"正在执行 {STAGE_LABELS[stage]}")
+        self._append_log(f"\n[{now_text()}] 启动 {STAGE_LABELS[stage]}")
+        self._append_log("命令：" + " ".join(map(str, command)))
+        self.process.start(str(command[0]), [str(item) for item in command[1:]])
+
+    def _stage_command(self, stage: str, python_exe: str, config_dir: Path, prepared: dict):
+        env = pipeline.child_env()
+        if stage == "observation":
+            return (
+                [
+                    python_exe,
+                    "solve_observation_info.py",
+                    "--config",
+                    str(config_dir / "observation.generated.json"),
+                    "--output",
+                    str(prepared["observation_output"]),
+                ],
+                storage.ROOT / "observation",
+                env,
+            )
+        if stage == "echo":
+            return (
+                [
+                    python_exe,
+                    "simulate_echo.py",
+                    "--config",
+                    str(config_dir / "echo.generated.json"),
+                    "--output",
+                    str(prepared["echo_output_dir"]),
+                ],
+                storage.ROOT / "echo",
+                env,
+            )
+        inversion_src = str(storage.ROOT / "inversion" / "src")
+        return (
+            [
+                python_exe,
+                "scripts/estimate_period.py",
+                "--echo",
+                str(prepared["echo_output_dir"] / "echo.npz"),
+                "--config",
+                str(config_dir / "inversion.generated.json"),
+                "--output",
+                str(prepared["inversion_output_dir"]),
+            ],
+            storage.ROOT / "inversion",
+            pipeline.child_env([inversion_src]),
+        )
+
+    def _render_stage_status_only(self) -> None:
+        for stage, label in self.stage_status_labels.items():
+            label.setText(f"状态：{self.stage_status[stage]}")
+
+    def _stop_pipeline(self) -> None:
+        self._pending_stages = []
+        if self.process and self.process.state() != NOT_RUNNING:
+            self.process.kill()
+            self._append_log(f"[{now_text()}] 已请求中止。")
+
+    def _read_process_output(self) -> None:
+        if not self.process:
+            return
+        text = (
+            bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+            + bytes(self.process.readAllStandardError()).decode("utf-8", errors="replace")
+        )
+        if not text:
+            return
+        self.process_output_buffer += text
+        lines = self.process_output_buffer.splitlines(keepends=True)
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            self.process_output_buffer = lines.pop()
+        else:
+            self.process_output_buffer = ""
+        for line in lines:
+            self._handle_output_line(line.rstrip())
+
+    def _handle_output_line(self, line: str) -> None:
+        if line.startswith("__PROGRESS__ "):
+            try:
+                payload = json.loads(line[len("__PROGRESS__ ") :])
+                percent = int(payload.get("percent", 0))
+                message = str(payload.get("message", ""))
+                stage = str(payload.get("stage", self.process_stage or "pipeline"))
+                self.progress.setValue(max(0, min(100, percent)))
+                self.progress.setFormat(f"{percent}%  {message}")
+                self.status_label.setText(f"{stage}: {message}")
+                return
+            except Exception:
+                pass
+        self._append_log(line)
+
+    def _process_error(self, _error) -> None:
+        if self.process:
+            self._append_log(self.process.errorString())
+
+    def _process_finished(self, exit_code: int, *_args) -> None:
+        if self.process_output_buffer:
+            self._handle_output_line(self.process_output_buffer)
+            self.process_output_buffer = ""
+        stage = self.process_stage
+        self.process = None
+        self.process_stage = None
+        if exit_code == 0:
+            if stage:
+                self.stage_status[stage] = "完成"
+            self.progress.setValue(100)
+            self.progress.setFormat("完成")
+            self._append_log(f"[{now_text()}] {STAGE_LABELS.get(stage, stage)} 完成。")
+            self._render_stage_status_only()
+            self._run_next_pending_stage()
+            return
+        if stage:
+            self.stage_status[stage] = "失败"
+        self._pending_stages = []
+        self.run_btn.setEnabled(True)
+        self.run_all_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.progress.setFormat("失败")
+        self.status_label.setText(f"失败：退出码 {exit_code}")
+        self._append_log(f"[{now_text()}] 失败，退出码 {exit_code}。")
+        self._render_stage_status_only()
+        QMessageBox.critical(self, "运行失败", f"阶段失败，退出码 {exit_code}")
+
+    def _append_log(self, text: str) -> None:
+        self.log.append(text)

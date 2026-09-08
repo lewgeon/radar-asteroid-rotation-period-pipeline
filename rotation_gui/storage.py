@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG_PATH = ROOT / "configs" / "pipeline_example.json"
+DEFAULT_CONFIG_PATH = ROOT / "configs" / "campaign_v3_example.json"
 STATE_DIR = ROOT / ".gui_state"
 STATE_PATH = STATE_DIR / "pipeline_gui_state.json"
 HISTORY_PATH = STATE_DIR / "history.json"

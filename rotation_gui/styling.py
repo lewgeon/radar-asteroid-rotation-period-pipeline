@@ -8,6 +8,16 @@ from .qt_compat import QStyleFactory, Qt
 GUI_STYLE = """
 QWidget { font-family: "Microsoft YaHei", "Segoe UI"; font-size: 13px; color: #25354a; }
 QMainWindow { background: #f3f5f8; }
+QFrame#toolbarPanel, QFrame#workPanel {
+    background: white; border: 1px solid #dce2eb; border-radius: 10px;
+}
+QLabel#panelTitle, QLabel#sectionTitle {
+    font-size: 17px; font-weight: 650; color: #173652;
+}
+QLabel#panelHint, QLabel#sectionHint, QLabel#statusText {
+    color: #60738c; font-size: 12px;
+}
+QLabel#fieldLabel { color: #35506c; font-size: 13px; }
 QGroupBox { border: 1px solid #dce2eb; border-radius: 8px;
     margin-top: 12px; padding-top: 12px; font-weight: 600; }
 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }

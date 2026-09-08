@@ -24,9 +24,24 @@ GROUP_LABELS = {
     "ephemeris": "星历查询",
     "solver": "求解器",
     "compute": "计算设置",
-    "scattering_spot": "散射热点",
+    "scattering_spot": "散射特性",
     "radar": "雷达参数",
-    "waveform": "波形参数",
+    "waveform": "发射时序",
+    "campaign": "观测活动",
+    "visibility": "可见性约束",
+    "radar_system": "雷达体制",
+    "receiver_sampling": "接收采样",
+    "schedule": "发射计划",
+    "radar_parameters": "射频波形",
+    "radar_acquire": "雷达体制与接收",
+    "sites": "测站",
+    "plan": "观测计划",
+    "geometry": "几何求解",
+    "spectrum": "时频分析",
+    "period_search": "周期搜索",
+    "echo_options": "回波输出",
+    "通用参数": "通用参数",
+    "general": "通用参数",
 }
 
 GROUP_LABELS_EN = {
@@ -57,7 +72,22 @@ CHOICES = {
     "object_type": ("null", "smallbody"),
     "query_mode": ("auto", "range", "list"),
     "spin_pole_frame": ("equatorial", "ecliptic"),
+    "mode": ("monostatic_switching", "bistatic_continuous"),
+    "selection": ("manual", "equal_visible_time", "random_visible_time"),
+    "echo_output_reference": ("centroid_compensated", "raw_baseband"),
+    "intrapulse_motion_model": ("per_pulse_linear", "frozen"),
+    "motion_compensation": ("none", "centroid_geometry"),
+    "period_time_role": ("scatter_centroid", "receive", "emit"),
+    "pulse_fiducial": ("leading_edge", "centroid"),
+    "baseband_convention": ("zero_to_bandwidth", "centered"),
 }
+
+# Domain-facing enums. Targets never use ground-station geodetic models.
+TARGET_STATE_CHOICES = ("static", "linear", "horizons_vectors")
+STATION_COORDINATE_CHOICES = ("cartesian", "geodetic")
+STATION_TECHNICAL_STATES = ("static", "linear", "geodetic_fixed", "astropy_geodetic")
+OBSERVATION_BODY_GROUPS = ("target", "transmitter", "receiver")
+STATION_GROUPS = ("transmitter", "receiver")
 
 OPTION_LABELS = {
     "zh": {
@@ -80,6 +110,25 @@ OPTION_LABELS = {
         "geodetic_fixed": "固定大地坐标",
         "astropy_geodetic": "Astropy 大地坐标",
         "horizons_vectors": "Horizons 星历",
+        "monostatic_switching": "单站收发切换",
+        "bistatic_continuous": "双站连续",
+        "manual": "手动指定",
+        "equal_visible_time": "可见时段等间隔",
+        "random_visible_time": "可见时段随机",
+        "centroid_compensated": "质心补偿基带",
+        "raw_baseband": "原始复基带",
+        "per_pulse_linear": "脉内一阶运动",
+        "frozen": "冻结几何",
+        "none": "无",
+        "centroid": "质心",
+        "centroid_geometry": "质心几何补偿",
+        "ephemeris": "星历补偿",
+        "scatter_centroid": "散射质心时标",
+        "receive": "接收时标",
+        "emit": "发射时标",
+        "leading_edge": "前沿",
+        "zero_to_bandwidth": "零到带宽",
+        "centered": "对称基带",
     },
     "en": {
         "true": "Yes",
@@ -226,6 +275,34 @@ FIELD_LABELS = {
     "period_min_s": "最小周期",
     "period_max_s": "最大周期",
     "period_grid_size": "周期网格数",
+    "target_id": "目标 ID",
+    "query_start_utc": "查询开始",
+    "query_end_utc": "查询结束",
+    "min_tx_elevation_deg": "发射最低仰角",
+    "min_rx_elevation_deg": "接收最低仰角",
+    "ephemeris_step_s": "可见性步长",
+    "mode": "工作体制",
+    "switch_time_s": "收发切换时间",
+    "safety_margin_s": "安全余量",
+    "prf_hz": "脉冲重复频率",
+    "pulse_fiducial": "脉冲时刻基准",
+    "baseband_convention": "基带约定",
+    "pre_guard_s": "前置保护",
+    "post_guard_s": "后置保护",
+    "max_bistatic_path_offset_m": "最大差分路径",
+    "selection": "选时方式",
+    "run_count": "Run 数量",
+    "run_duration_s": "单次 Run 时长",
+    "random_seed": "随机种子",
+    "runs": "Run 时刻表",
+    "echo_output_reference": "回波参考系",
+    "intrapulse_motion_model": "脉内运动模型",
+    "motion_compensation": "运动补偿",
+    "period_time_role": "周期时标",
+    "harmonics": "谐波数",
+    "cross_run_phase_coherent": "跨 Run 相干",
+    "cpi_pulses": "CPI 脉冲数",
+    "cpi_hop_pulses": "CPI 步进",
 }
 
 FIELD_LABELS_EN = {
@@ -319,6 +396,16 @@ FIELD_UNITS = {
     "snr_db": "dB",
     "period_min_s": "s",
     "period_max_s": "s",
+    "switch_time_s": "s",
+    "safety_margin_s": "s",
+    "prf_hz": "Hz",
+    "pre_guard_s": "s",
+    "post_guard_s": "s",
+    "max_bistatic_path_offset_m": "m",
+    "run_duration_s": "s",
+    "ephemeris_step_s": "s",
+    "min_tx_elevation_deg": "°",
+    "min_rx_elevation_deg": "°",
 }
 
 UNIT_CHOICES = {

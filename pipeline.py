@@ -2,6 +2,8 @@
 
 import argparse
 import copy
+import datetime as dt
+import hashlib
 import json
 import os
 import subprocess
@@ -10,6 +12,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
+
+# Observation owns transmit timing and receive sampling. Echo owns RF waveform details.
+# Timing fields are injected into the echo child config at prepare time, never dual-edited.
+OBSERVATION_WAVEFORM_KEYS = ("type", "prf_hz", "pulse_width_s", "pulse_fiducial")
+ECHO_WAVEFORM_KEYS = ("type", "bandwidth_hz", "amplitude", "baseband_convention")
+ECHO_INJECTED_FROM_OBSERVATION = ("prf_hz", "pulse_width_s", "pulse_fiducial")
 
 
 DEFAULT_CONFIG = {
@@ -44,6 +52,8 @@ DEFAULT_CONFIG = {
     "echo": {
         "model_path": "models/ellipsoid.obj",
         "seed": 20250729,
+        "echo_output_reference": "raw_baseband",
+        "intrapulse_motion_model": "per_pulse_linear",
         "compute": {
             "device": "auto",
             "dtype": "float32",
@@ -76,6 +86,8 @@ DEFAULT_CONFIG = {
         "period_min_s": 8.0,
         "period_max_s": 40.0,
         "period_grid_size": 4000,
+        "motion_compensation": "centroid_geometry",
+        "period_time_role": "scatter_centroid",
     },
 }
 
@@ -215,6 +227,10 @@ FRIENDLY_KEY_ALIASES = {
     "First Pulse Start": "first_pulse_start_s",
     "信噪比": "snr_db",
     "SNR": "snr_db",
+    "回波输出参考系": "echo_output_reference",
+    "Echo Output Reference": "echo_output_reference",
+    "脉内运动模型": "intrapulse_motion_model",
+    "Intrapulse Motion Model": "intrapulse_motion_model",
     "STFT窗长": "stft_window_samples",
     "STFT Window": "stft_window_samples",
     "STFT重叠率": "stft_overlap_fraction",
@@ -292,6 +308,8 @@ CANONICAL_TO_FRIENDLY_ZH = {
     "receive_window_duration_s": "接收窗时长",
     "first_pulse_start_s": "首脉冲起点",
     "snr_db": "信噪比",
+    "echo_output_reference": "回波输出参考系",
+    "intrapulse_motion_model": "脉内运动模型",
     "stft_window_samples": "STFT窗长",
     "stft_overlap_fraction": "STFT重叠率",
     "period_min_s": "周期下限",
@@ -335,6 +353,21 @@ def write_json(path, payload):
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def config_sha256(config):
+    encoded = json.dumps(config, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def build_manifest(config):
+    return {
+        "schema_version": int(config.get("schema_version", 1)),
+        "created_utc": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "config_sha256": config_sha256(config),
+        "python_version": sys.version,
+        "pipeline_version": "0.4.0-transmit-driven",
+    }
+
+
 def abs_path(path):
     path = Path(path)
     return path if path.is_absolute() else ROOT / path
@@ -372,7 +405,178 @@ def pipeline_config_from_any(config):
         canonical_key = FRIENDLY_KEY_ALIASES.get(key, key)
         converted[canonical_key] = pipeline_config_from_any(value)
     _collapse_scattering_power(converted)
+    if (
+        converted.get("schema_version") == 3
+        and "campaign" in converted
+        and "schedule" in converted
+        and "observation" not in converted
+    ):
+        return _canonical_campaign_to_pipeline(converted)
+    if "observation" in converted or "echo" in converted:
+        return normalize_parameter_ownership(converted)
     return converted
+
+
+def _station_config(value, *, fallback_name):
+    value = copy.deepcopy(value or {})
+    value.setdefault("name", value.get("id", fallback_name))
+    if "longitude_deg" in value:
+        value["lon_deg"] = value.pop("longitude_deg")
+    if "latitude_deg" in value:
+        value["lat_deg"] = value.pop("latitude_deg")
+    if "altitude_m" in value:
+        value["height_m"] = value.pop("altitude_m")
+    if "state" not in value:
+        if {"lon_deg", "lat_deg", "height_m"}.issubset(value):
+            value["state"] = "astropy_geodetic"
+        elif "position_m" in value:
+            value["state"] = "static"
+    return value
+
+
+def _canonical_campaign_to_pipeline(config):
+    """Adapt the schema-v3 campaign document to the existing three executables."""
+
+    campaign = copy.deepcopy(config["campaign"])
+    sites = copy.deepcopy(config.get("sites", {}))
+    transmitter = _station_config(sites.get("transmitter"), fallback_name="TX")
+    receiver_raw = sites.get("receiver", {})
+    if receiver_raw.get("same_as") in {transmitter.get("id"), "transmitter"}:
+        receiver = copy.deepcopy(transmitter)
+        receiver["name"] = receiver_raw.get("name", transmitter.get("name", "RX"))
+    else:
+        receiver = _station_config(receiver_raw, fallback_name="RX")
+    target = copy.deepcopy(config.get("target", campaign.get("target", {})))
+    if not target:
+        target = {
+            "id": str(campaign["target_id"]),
+            "name": str(campaign.get("target_name", campaign["target_id"])),
+            "state": "horizons_vectors",
+            "object_type": campaign.get("target_object_type", "smallbody"),
+        }
+    waveform = copy.deepcopy(config["waveform"])
+    if waveform.get("type") == "lfm_chirp":
+        waveform["type"] = "chirp_pulse_train"
+    receiver_sampling = copy.deepcopy(config.get("receiver", {}))
+    if "fs_hz" in receiver_sampling and "fast_sample_rate_hz" not in receiver_sampling:
+        receiver_sampling["fast_sample_rate_hz"] = receiver_sampling.pop("fs_hz")
+    transmit_timing = {
+        key: waveform[key] for key in OBSERVATION_WAVEFORM_KEYS if key in waveform
+    }
+    rf_waveform = {key: waveform[key] for key in ECHO_WAVEFORM_KEYS if key in waveform}
+    observation = {
+        "campaign": campaign,
+        "target": target,
+        "transmitter": transmitter,
+        "receiver": receiver,
+        "visibility": copy.deepcopy(config.get("visibility", {})),
+        "radar_system": copy.deepcopy(config["radar_system"]),
+        "waveform": transmit_timing,
+        "receiver_sampling": receiver_sampling,
+        "schedule": copy.deepcopy(config["schedule"]),
+        "ephemeris": copy.deepcopy(config.get("ephemeris", {})),
+        "solver": copy.deepcopy(config.get("solver", {"tolerance_s": 1e-9, "max_iter": 32})),
+    }
+    echo_model = copy.deepcopy(config.get("echo_model", {}))
+    echo_config = copy.deepcopy(DEFAULT_CONFIG["echo"])
+    for key, value in echo_model.items():
+        if isinstance(value, dict) and isinstance(echo_config.get(key), dict):
+            echo_config[key].update(value)
+        else:
+            echo_config[key] = value
+    echo_config["echo_output_reference"] = echo_model.get(
+        "echo_output_reference", "centroid_compensated"
+    )
+    echo_config.setdefault("intrapulse_motion_model", "per_pulse_linear")
+    echo_config["waveform"] = rf_waveform
+    if "carrier_frequency_hz" in waveform:
+        echo_config["radar"] = {
+            "carrier_frequency_hz": float(waveform["carrier_frequency_hz"])
+        }
+    processing = config.get("processing", {})
+    estimator = config.get("period_estimation", {})
+    inversion_config = copy.deepcopy(DEFAULT_CONFIG["inversion"])
+    inversion_config.update(
+        {
+            "period_min_s": estimator.get("minimum_period_s", inversion_config["period_min_s"]),
+            "period_max_s": estimator.get("maximum_period_s", inversion_config["period_max_s"]),
+            "period_grid_size": estimator.get("period_grid_size", inversion_config["period_grid_size"]),
+            "harmonics": estimator.get("harmonics", 1),
+            "cross_run_phase_coherent": estimator.get("cross_run_phase_coherent", False),
+            "cpi_pulses": processing.get("cpi_pulses", 128),
+            "cpi_hop_pulses": processing.get("cpi_hop_pulses", 32),
+            "motion_compensation": processing.get("motion_compensation", "centroid_geometry"),
+            "period_time_role": processing.get("period_time_role", "scatter_centroid"),
+        }
+    )
+    return normalize_parameter_ownership(
+        {
+            "schema_version": 3,
+            "campaign": campaign,
+            "observation": observation,
+            "echo": echo_config,
+            "inversion": inversion_config,
+        }
+    )
+
+
+def normalize_parameter_ownership(config):
+    """Ensure observation/echo do not dual-own the same editable radar fields."""
+
+    config = copy.deepcopy(config)
+    observation = config.setdefault("observation", {})
+    echo = config.setdefault("echo", {})
+    obs_waveform = dict(observation.get("waveform", {}))
+    echo_waveform = dict(echo.get("waveform", {}))
+    echo_radar = dict(echo.get("radar", {}))
+
+    for waveform in (obs_waveform, echo_waveform):
+        if waveform.get("type") == "lfm_chirp":
+            waveform["type"] = "chirp_pulse_train"
+
+    for key in ("bandwidth_hz", "amplitude", "baseband_convention"):
+        if key in obs_waveform:
+            echo_waveform.setdefault(key, obs_waveform.pop(key))
+    if "carrier_frequency_hz" in obs_waveform:
+        echo_radar.setdefault("carrier_frequency_hz", obs_waveform.pop("carrier_frequency_hz"))
+    if "type" in obs_waveform:
+        echo_waveform["type"] = obs_waveform["type"]
+    elif "type" in echo_waveform and "type" not in obs_waveform:
+        obs_waveform["type"] = echo_waveform["type"]
+
+    # Observation keeps only transmit-timing waveform fields.
+    observation["waveform"] = {
+        key: obs_waveform[key] for key in OBSERVATION_WAVEFORM_KEYS if key in obs_waveform
+    }
+    # Echo keeps only RF waveform fields; timing is injected later for the child process.
+    for key in ECHO_INJECTED_FROM_OBSERVATION + ("fast_sample_rate_hz", "carrier_frequency_hz"):
+        echo_waveform.pop(key, None)
+    echo["waveform"] = {key: echo_waveform[key] for key in ECHO_WAVEFORM_KEYS if key in echo_waveform}
+    if echo_radar:
+        echo["radar"] = echo_radar
+    config["observation"] = observation
+    config["echo"] = echo
+    return config
+
+
+def assemble_echo_waveform(observation_config, echo_config):
+    """Build the executable echo waveform from RF ownership + observation timing."""
+
+    observation_waveform = observation_config.get("waveform", {})
+    receiver_sampling = observation_config.get("receiver_sampling", {})
+    echo_waveform = copy.deepcopy(echo_config.get("waveform", {}))
+    for key in ECHO_INJECTED_FROM_OBSERVATION:
+        if key in observation_waveform:
+            echo_waveform[key] = observation_waveform[key]
+    if "type" not in echo_waveform and "type" in observation_waveform:
+        echo_waveform["type"] = observation_waveform["type"]
+    if "fast_sample_rate_hz" in receiver_sampling:
+        echo_waveform["fast_sample_rate_hz"] = float(receiver_sampling["fast_sample_rate_hz"])
+    bandwidth = echo_waveform.get("bandwidth_hz")
+    sample_rate = echo_waveform.get("fast_sample_rate_hz")
+    if bandwidth is not None and sample_rate is not None and float(sample_rate) <= abs(float(bandwidth)):
+        raise ValueError("复基带 chirp 要求 receiver.fast_sample_rate_hz 大于 bandwidth_hz")
+    return echo_waveform
 
 
 def _collapse_scattering_power(config):
@@ -418,15 +622,33 @@ def run_step(name, command, cwd, env=None):
 
 
 def child_env(extra_paths=None):
+    """Build a child process env without inheriting a polluted PYTHONPATH.
+
+    Putting ``inversion/src`` on ``PYTHONPATH`` used to shadow the stdlib
+    ``signal`` module and break torch imports in the echo stage. Children only
+    get explicitly requested paths plus any unrelated inherited entries.
+    """
+
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
-    if extra_paths:
-        env["PYTHONPATH"] = os.pathsep.join(extra_paths + [env.get("PYTHONPATH", "")])
+    inversion_src = (ROOT / "inversion" / "src").resolve()
+    inherited = []
+    for entry in env.get("PYTHONPATH", "").split(os.pathsep):
+        if not entry:
+            continue
+        try:
+            if Path(entry).resolve() == inversion_src:
+                continue
+        except OSError:
+            pass
+        inherited.append(entry)
+    paths = [str(Path(path)) for path in (extra_paths or [])] + inherited
+    env["PYTHONPATH"] = os.pathsep.join(paths)
     return env
 
 
 def prepared_configs(config, run_dir):
-    config = pipeline_config_from_any(config)
+    config = normalize_parameter_ownership(pipeline_config_from_any(config))
     observation_output = run_dir / "observation_info.npz"
     echo_output_dir = run_dir / "echo"
     inversion_output_dir = run_dir / "inversion"
@@ -436,6 +658,12 @@ def prepared_configs(config, run_dir):
 
     echo_config = copy.deepcopy(config["echo"])
     echo_config["observation_info_path"] = str(observation_output)
+    if "waveform" in observation_config or "waveform" in echo_config:
+        echo_config["waveform"] = assemble_echo_waveform(observation_config, echo_config)
+    if "radar" not in echo_config and "carrier_frequency_hz" in observation_config.get("waveform", {}):
+        echo_config["radar"] = {
+            "carrier_frequency_hz": float(observation_config["waveform"]["carrier_frequency_hz"])
+        }
 
     inversion_config = copy.deepcopy(config["inversion"])
 
@@ -451,7 +679,9 @@ def prepared_configs(config, run_dir):
 
 def main():
     args = parse_args()
-    config = pipeline_config_from_any(load_json(args.config)) if args.config else copy.deepcopy(DEFAULT_CONFIG)
+    config = normalize_parameter_ownership(
+        pipeline_config_from_any(load_json(args.config)) if args.config else copy.deepcopy(DEFAULT_CONFIG)
+    )
     require_sections(config)
 
     run_dir = run_directory(args)
@@ -461,6 +691,7 @@ def main():
     write_json(config_dir / "observation.generated.json", prepared["observation"])
     write_json(config_dir / "echo.generated.json", prepared["echo"])
     write_json(config_dir / "inversion.generated.json", prepared["inversion"])
+    write_json(run_dir / "manifest.json", build_manifest(config))
 
     if not args.skip_observation:
         run_step(

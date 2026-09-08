@@ -107,7 +107,7 @@ def _prepare_qt_webengine_paths() -> bool:
 
 
 _prepare_qt_plugin_path()
-QT_WEBENGINE_AVAILABLE = _prepare_qt_webengine_paths()
+QT_WEBENGINE_AVAILABLE = False
 
 
 def _load_qt_binding():
@@ -180,15 +180,7 @@ def _load_qt_binding():
 
 _qt, QT_BINDING = _load_qt_binding()
 globals().update(_qt)
-try:
-    if not QT_WEBENGINE_AVAILABLE:
-        QWebEngineView = None
-    elif QT_BINDING == "PyQt6":
-        from PyQt6.QtWebEngineWidgets import QWebEngineView
-    else:
-        from PySide6.QtWebEngineWidgets import QWebEngineView
-except Exception:
-    QWebEngineView = None
+QWebEngineView = None
 
 
 ALIGN_CENTER = Qt.AlignmentFlag.AlignCenter

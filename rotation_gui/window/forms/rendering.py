@@ -6,7 +6,8 @@ from ...qt_compat import (
 )
 from ...schema import (
     CHOICES, CONTROL_HEIGHT, FIELD_LABELS, FIELD_LABELS_EN, FIELD_UNITS,
-    STAGE_GROUP_ORDER, STATE_DEFAULTS, STATE_FIELDS, UNIT_CHOICES,
+    STAGE_GROUP_ORDER, STATE_DEFAULTS, STATE_FIELDS, STATION_COORDINATE_CHOICES,
+    STATION_GROUPS, TARGET_STATE_CHOICES, UNIT_CHOICES,
 )
 from ...storage import format_value
 from ...widgets import (
@@ -443,7 +444,7 @@ class FormRenderingMixin:
             return CHOICES[key]
         group_name = full_path.split(".")[0]
         if self.current_stage == "observation" and group_name == "target":
-            return ("linear", "static", "horizons_vectors")
-        if self.current_stage == "observation" and group_name in {"transmitter", "receiver"}:
-            return ("cartesian", "geodetic")
+            return TARGET_STATE_CHOICES
+        if self.current_stage == "observation" and group_name in STATION_GROUPS:
+            return STATION_COORDINATE_CHOICES
         return CHOICES[key]

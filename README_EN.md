@@ -8,7 +8,7 @@ The project is split into three independent submodules:
 2. `echo/` reads `observation_info.npz` plus shape/radar settings, then writes `echo.npz`.
 3. `inversion/` reads `echo.npz` and estimates rotation-period candidates.
 
-The top-level `pipeline.py` connects the three modules through files. The modules do not import each other's business logic. The experiment config contains only three business sections: `observation`, `echo`, and `inversion`. Intermediate paths are generated and injected by the pipeline.
+The top-level `pipeline.py` connects the three modules through files. It accepts both the legacy three-section configuration and the schema-v3 campaign configuration. Intermediate paths are generated and injected by the pipeline.
 
 ## Quick Start
 
@@ -19,20 +19,38 @@ conda activate pytorch
 python pipeline.py --config configs\pipeline_example.json
 ```
 
-Use the multi-acquisition configuration for chirp pulses:
+Use the transmit-driven schema-v3 campaign for chirp pulses:
 
 ```powershell
-python pipeline.py --config configs\chirp_smoke.json
+python pipeline.py --config configs\campaign_v3_example.json
 ```
 
-This mode no longer applies one sample rate to the whole campaign.
-`receive.acquisitions` defines each short coherent acquisition by start time,
-pulse count, and PRF, while `waveform.fast_sample_rate_hz` applies only inside
-the fast-time receive window. IQ is stored as `[pulse, fast_time]`, with no
-samples allocated in acquisition gaps. Inversion range-compresses each pulse,
-extracts power/range features, and applies Lomb–Scargle at the true, potentially
-irregular pulse epochs. Phase is never stitched across different `coherence_id`
-groups. See [Three-time-axis architecture](docs/three_time_axis_architecture.md).
+`schedule.runs[].tx_start_utc` defines physical transmit starts. PRF belongs to
+the waveform, while `receiver.fast_sample_rate_hz` belongs to the ADC. Every
+pulse is propagated forward through transmit–centroid-scatter–receive geometry.
+Each saved IQ row remains an integer slice of one uniform ADC grid per run.
+Inversion performs pulse compression, sliding CPIs within coherence groups,
+range-Doppler feature extraction, and a multi-harmonic period search with
+per-run baselines. Candidates from independent observables are clustered into
+a cross-feature consensus result. Phase is never stitched across different
+`coherence_id` groups. See [schema-v3 architecture](docs/ARCHITECTURE_V3.md). The old
+`receive.acquisitions` route is retained for compatibility only.
+
+The receiver has one continuous ADC clock, at `fast_sample_rate_hz`, throughout
+each run's receive interval. “Fast time” and “slow time” are processing
+coordinates; PRF is not a second receive sampling rate. To avoid storing empty
+inter-pulse spans, the simulator evaluates each required global integer ADC
+index once, including noise, and then gathers those indices into rows using
+`row_start_sample`. Repeated indices are identical in every row. If echoes from
+adjacent pulses overlap, all contributing pulses are summed and the dataset is
+flagged with a warning.
+
+Schema v3 supports two echo references. The default `centroid_compensated`
+output is intended for rotation-inversion development and removes ideal
+centroid translation. `raw_baseband` preserves common delay and carrier
+Doppler for pre-deployment realism tests. Both use per-pulse three-event
+ephemeris anchors and default `per_pulse_linear` intrapulse motion. The
+traditional `frozen` stop-and-go mode is available only behind error checks.
 
 You can also launch the first-pass desktop GUI and run the pipeline step by step:
 
@@ -52,7 +70,10 @@ the top-level `pyside_gui.py` remains a compatibility launcher. See the
 [GUI architecture guide](docs/GUI_ARCHITECTURE.md) for module ownership,
 dependency direction, and extension points.
 
-The GUI loads initial values from `configs/pipeline_example.json`. The "执行下一步"
+The GUI now loads the schema-v3 chirp example from `configs/campaign_v3_example.json`;
+legacy configs can still be opened explicitly. The Run Schedule card is visible at
+the top of the observation page and can compute visibility, select transmit runs,
+populate their UTC rows, and preview the visibility timeline. The "执行下一步"
 button runs `observation`, `echo`, and `inversion` one stage at a time. Edited
 parameters are saved under `.gui_state/pipeline_gui_state.json` and reused the
 next time the GUI opens. Recent execution history is shown in the left panel.
@@ -64,17 +85,22 @@ browser opening kept as fallback.
 The older Tkinter entry point remains available as `python gui_app.py` for fallback.
 
 The PySide6 parameter editor uses content-height cards in stable semantic lanes.
-In observation windows, target/transmitter/receiver stay on the left and
-receive/ephemeris/solver stay on the right. Monostatic mode only hides the receiver.
+Schema-v3 observation windows place the Run Schedule and live timeline across the top,
+with visibility, radar mode, transmit waveform, and receive ADC controls grouped by ownership.
+Legacy layouts remain supported.
 Maximized windows keep the same two module lanes. Preview now lives in a closable
 right sidebar that opens after a completed stage; the lower area contains only logs.
-Echo uses compute/radar on the left and target/scattering on the right. Value and compact
+Schema v3 has one editable acquisition source: the Observation page. Echo shows a
+read-only acquisition summary and generates its execution snapshot from Observation
+immediately before running; it only edits compute, noise, target, and scattering settings.
+Legacy three-section configs retain their radar editor. Value and compact
 unit controls share a consistent appearance. Peer field labels use the same font,
 while spin axis, position, velocity, and scattering direction use one subtle vertical-rail pattern for child fields.
 Scrollbars and checkmarks have stronger contrast. Dropdown lists open below the
 control (above only when screen space requires it), using native Windows effects
-where supported. Radar frequency, waveform, SNR, and noise seed share a card, while
-inversion settings are split into time–frequency analysis and period search.
+where supported. SNR and noise seed share a simulation card, while
+schema-v3 inversion settings are split into chirp signal processing and period
+search; CW-only STFT fields are hidden for chirp campaigns.
 These are presentation-only groups: JSON paths remain unchanged. Drag the splitter
 between parameters and logs/previews to adjust the available space.
 
