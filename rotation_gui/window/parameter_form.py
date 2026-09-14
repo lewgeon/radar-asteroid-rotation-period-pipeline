@@ -26,11 +26,13 @@ from ..schema import (
     COMMON_FIELD_ORDER,
     CONTROL_HEIGHT,
     EPHEMERIS_FIELD_DEFAULTS,
-    EPHEMERIS_FIELD_ORDER,
     FIELD_LABELS,
     FIELD_UNITS,
     GROUP_LABELS,
     HORIZONS_ID_TYPE_ALIASES,
+    INTEGER_FIELD_KEYS,
+    MESH_ECHO_DEFAULTS,
+    NUMERIC_FIELD_KEYS,
     OBSERVATION_BODY_GROUPS,
     OPTION_LABELS,
     SCATTERING_SPOT_DEFAULTS,
@@ -47,6 +49,7 @@ from ..widgets import (
     BooleanFieldWidget,
     DirectionBodyWidget,
     NoWheelComboBox,
+    NumericLineEdit,
     ParameterCards,
     SubsectionPanel,
     UnitValueWidget,
@@ -55,17 +58,19 @@ from ..widgets import (
 
 SECTION_META = {
     "observation": ("观测解算", "目标、测站、发射时序、接收采样与 run 计划"),
-    "echo": ("回波仿真", "射频波形、自转、散射与回波参考系；发射时序/采样率由观测阶段注入"),
+    "echo": ("回波仿真", "射频波形、自转、散射与回波参考系；发射时序/采样率读取观测计划"),
     "inversion": ("周期反演", "时频特征、CPI 与周期搜索范围"),
 }
 
 ECHO_FIELD_ORDER = (
+    "point_target.amplitude_scale",
     "compute.device",
     "compute.dtype",
     "radar.carrier_frequency_hz",
     "waveform.bandwidth_hz",
     "waveform.amplitude",
     "waveform.baseband_convention",
+    "noise_enabled",
     "snr_db",
     "seed",
     "echo_output_reference",
@@ -87,15 +92,10 @@ ECHO_FIELD_ORDER = (
 ECHO_CHIRP_ONLY_FIELDS = {"waveform.bandwidth_hz", "waveform.baseband_convention"}
 
 OBSERVATION_WAVEFORM_DEFAULTS = {
-    "continuous_wave": {
-        "prf_hz": 1.0,
-        "pulse_width_s": 0.5,
-        "pulse_fiducial": "leading_edge",
-    },
+    "continuous_wave": {},
     "chirp_pulse_train": {
         "prf_hz": 4.0,
         "pulse_width_s": 0.001,
-        "pulse_fiducial": "leading_edge",
     },
 }
 
@@ -113,16 +113,24 @@ ECHO_WAVEFORM_DEFAULTS = {
 INVERSION_FIELD_ORDER = (
     "stft_window_samples",
     "stft_overlap_fraction",
-    "cpi_pulses",
-    "cpi_hop_pulses",
+    "cpi_duration_s",
+    "cpi_hop_duration_s",
     "period_min_s",
     "period_max_s",
     "period_grid_size",
     "period_time_role",
     "motion_compensation",
     "harmonics",
-    "cross_run_phase_coherent",
 )
+INVERSION_CW_ONLY = {"stft_window_samples", "stft_overlap_fraction"}
+INVERSION_CHIRP_ONLY = {
+    "cpi_duration_s",
+    "cpi_hop_duration_s",
+    "motion_compensation",
+    "period_time_role",
+    "harmonics",
+}
+ECHO_MESH_ONLY = ("model_path", "target", "scattering_power", "scattering_spot")
 
 CARD_ORDER = {
     "observation": (
@@ -132,11 +140,19 @@ CARD_ORDER = {
         "receiver",
         "radar_system",
         "waveform",
+        "receive",
         "receiver_sampling",
         "plan",
         "geometry",
     ),
-    "echo": ("compute", "radar_parameters", "echo_options", "target", "scattering_spot"),
+    "echo": (
+        "compute",
+        "radar_parameters",
+        "noise",
+        "echo_options",
+        "target",
+        "scattering_spot",
+    ),
     "inversion": ("spectrum", "period_search"),
 }
 
@@ -152,7 +168,10 @@ class ParameterForm(QWidget):
         self._cards: list[ParameterCards] = []
         self._active_stage = ""
         self._config: dict = {}
+        self._mesh_echo_draft: dict | None = None
+        self._noise_draft: dict | None = None
         self.monostatic = False
+        self.point_target = False
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         self.scroll = QScrollArea()
@@ -172,6 +191,7 @@ class ParameterForm(QWidget):
         stage: str | None = None,
         *,
         monostatic: bool = False,
+        point_target: bool = False,
         focus_path: str | None = None,
         preserve_scroll: bool = True,
     ) -> None:
@@ -181,11 +201,14 @@ class ParameterForm(QWidget):
         self.field_widgets.clear()
         self._cards.clear()
         self.monostatic = bool(monostatic)
+        self.point_target = bool(point_target)
         while self.canvas_layout.count():
             item = self.canvas_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                widget.setParent(None)
+                # Hide while still parented. setParent(None) would promote a
+                # visible widget into a brief top-level window.
+                widget.hide()
                 widget.deleteLater()
         stages = (stage,) if stage else tuple(SECTION_META)
         for name in stages:
@@ -209,11 +232,12 @@ class ParameterForm(QWidget):
 
         QTimer.singleShot(0, _restore_view)
 
-    def collect(self) -> dict:
+    def collect(self, *, strip: bool = True) -> dict:
         # Start from the live model so hidden conditional fields are not wiped.
         config = copy.deepcopy(self._config) if self._config else {}
         geodetic_rotation: dict[str, bool] = {}
         linear_motion: dict[str, bool] = {}
+        noise_enabled = None
         for path, widget in self.field_widgets.items():
             value = self._widget_value(widget)
             if path.endswith(".geodetic_time_dependent"):
@@ -221,6 +245,10 @@ class ParameterForm(QWidget):
                 continue
             if path.endswith(".linear_motion"):
                 linear_motion[path.split(".")[1]] = bool(value)
+                continue
+            if path == "echo.noise_enabled":
+                # Presentation-only toggle; maps to snr_db null vs numeric.
+                noise_enabled = bool(value)
                 continue
             assign_path(config, path, value)
 
@@ -244,6 +272,8 @@ class ParameterForm(QWidget):
                 observation["target"] = self._normalize_state_group(target, role="target")
         echo = config.get("echo")
         if isinstance(echo, dict):
+            if noise_enabled is not None:
+                self._apply_noise_enabled(echo, noise_enabled)
             self._normalize_echo_stage(echo)
             observation = config.get("observation", {})
             obs_type = None
@@ -251,6 +281,8 @@ class ParameterForm(QWidget):
                 obs_type = observation.get("waveform", {}).get("type")
             if obs_type:
                 echo.setdefault("waveform", {})["type"] = obs_type
+        if strip:
+            self._strip_inapplicable_fields(config)
         return config
 
     def collect_stage(self, stage: str) -> dict:
@@ -293,15 +325,19 @@ class ParameterForm(QWidget):
                 loose[key] = value
         if stage == "echo":
             for path, value in loose.items():
+                if path == "scattering_model":
+                    continue
                 if path == "model_path":
                     section = "target"
                 elif path == "scattering_power":
                     section = "scattering_spot"
-                elif path in {"snr_db", "seed"}:
-                    section = "radar_parameters"
+                elif path in {"noise_enabled", "snr_db", "seed"}:
+                    section = "noise"
                 else:
                     section = "echo_options"
                 sections.setdefault(section, []).append((path, value))
+            if "point_target" in sections:
+                sections.setdefault("target", []).extend(sections.pop("point_target"))
             for group_name in ("radar", "waveform"):
                 fields = sections.pop(group_name, [])
                 if fields:
@@ -313,7 +349,7 @@ class ParameterForm(QWidget):
         elif stage == "observation":
             merges = {
                 "plan": ("visibility", "schedule"),
-                "geometry": ("ephemeris", "solver"),
+                "geometry": ("ephemeris",),
             }
             for target, sources in merges.items():
                 merged = []
@@ -321,7 +357,6 @@ class ParameterForm(QWidget):
                     merged.extend(sections.pop(source, []))
                 if merged:
                     sections[target] = merged
-            sections.pop("receive", None)
             if self.monostatic:
                 sections.pop("receiver", None)
             if loose:
@@ -332,6 +367,21 @@ class ParameterForm(QWidget):
             for path, value in loose.items():
                 section = "spectrum" if path.startswith(("stft_", "cpi_")) else "period_search"
                 sections.setdefault(section, []).append((path, value))
+            waveform_type = self._active_waveform_type()
+            cw_only = INVERSION_CW_ONLY
+            chirp_only = INVERSION_CHIRP_ONLY
+            for section_name, fields in list(sections.items()):
+                filtered = []
+                for path, value in fields:
+                    if waveform_type == "continuous_wave" and path in chirp_only:
+                        continue
+                    if waveform_type == "chirp_pulse_train" and path in cw_only:
+                        continue
+                    filtered.append((path, value))
+                if filtered:
+                    sections[section_name] = filtered
+                else:
+                    sections.pop(section_name, None)
             priorities = {path: index for index, path in enumerate(INVERSION_FIELD_ORDER)}
             for fields in sections.values():
                 fields.sort(key=lambda item: priorities.get(item[0], len(priorities)))
@@ -400,6 +450,8 @@ class ParameterForm(QWidget):
                         group.get(child_key, copy.deepcopy(STATE_DEFAULTS.get(child_key, ""))),
                     )
                 )
+            # target.extent_path_m is presented on the chirp receiver_sampling
+            # card (ADC window sizing), not on the target body card.
         return fields
 
     def _create_card(self, stage: str, group_name: str, fields: list) -> QFrame:
@@ -504,6 +556,8 @@ class ParameterForm(QWidget):
             if isinstance(widget, BooleanFieldWidget):
                 if relative_path == "scattering_spot.enabled":
                     widget.checkbox.toggled.connect(lambda _checked: self._on_spot_enabled_changed())
+                if relative_path == "noise_enabled":
+                    widget.checkbox.toggled.connect(lambda _checked: self._on_noise_enabled_changed())
                 grid.addWidget(label, row, 0)
                 grid.addWidget(widget, row, 1, alignment=Qt.AlignmentFlag.AlignLeft)
             elif isinstance(widget, (VectorValueWidget, DirectionBodyWidget)):
@@ -513,7 +567,7 @@ class ParameterForm(QWidget):
                 label.deleteLater()
                 grid.addWidget(section.heading, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
                 grid.addWidget(section, row, 1)
-            elif key in {"model_path", "runs", "pulse_start_s"} or key.endswith("_utc"):
+            elif key in {"model_path", "runs"} or key.endswith("_utc"):
                 grid.addWidget(label, row, 0, 1, 2)
                 grid.addWidget(widget, row + 1, 0, 1, 2)
                 row += 1
@@ -634,15 +688,13 @@ class ParameterForm(QWidget):
             combo = NoWheelComboBox()
             choices = self._choices_for_field(full_path)
             current = format_value(value)
-            if key == "spin_pole_frame" and current in {"icrs", "equtorial"}:
-                current = "equatorial"
             for item in choices:
                 data = "true" if item is True else "false" if item is False else str(item)
-                combo.addItem(OPTION_LABELS["zh"].get(data, data), data)
+                combo.addItem(OPTION_LABELS.get(data, data), data)
             existing = [combo.itemData(i) for i in range(combo.count())]
             if current not in existing:
                 # Preserve unknown values instead of silently rewriting config.
-                combo.insertItem(0, OPTION_LABELS["zh"].get(current, current), current)
+                combo.insertItem(0, OPTION_LABELS.get(current, current), current)
             index = combo.findData(current)
             combo.blockSignals(True)
             combo.setCurrentIndex(max(0, index))
@@ -662,6 +714,10 @@ class ParameterForm(QWidget):
                 combo.currentIndexChanged.connect(
                     lambda _index: self._on_waveform_type_changed()
                 )
+            if full_path == "scattering_model":
+                combo.currentIndexChanged.connect(
+                    lambda _index: self._on_scattering_model_changed()
+                )
             if full_path == "schedule.selection":
                 combo.currentIndexChanged.connect(
                     lambda _index: self._on_schedule_selection_changed()
@@ -679,7 +735,14 @@ class ParameterForm(QWidget):
             custom.setMinimumWidth(200)
             custom.setSizePolicy(EXPANDING, FIXED)
             return custom
-        edit = QLineEdit(format_value(value))
+        if key in NUMERIC_FIELD_KEYS:
+            edit = NumericLineEdit(
+                value,
+                label=f"{self._active_stage}.{full_path}",
+                integer=key in INTEGER_FIELD_KEYS,
+            )
+        else:
+            edit = QLineEdit(format_value(value))
         edit.setFixedHeight(CONTROL_HEIGHT)
         edit.setMinimumWidth(200)
         edit.setSizePolicy(EXPANDING, FIXED)
@@ -703,28 +766,30 @@ class ParameterForm(QWidget):
         key = full_path.split(".")[-1]
         unit = FIELD_UNITS.get(key)
         if key == "scattering_power" and isinstance(value, list) and len(value) == 2:
-            return VectorValueWidget(value, ("发射照明", "接收散射"))
+            return VectorValueWidget(value, ("发射照明", "接收散射"), label=full_path)
         if key == "spin_pole_icrs_deg" and isinstance(value, list):
-            return VectorValueWidget(value, ("赤经", "赤纬"), "°")
+            return VectorValueWidget(value, ("赤经", "赤纬"), "°", label=full_path)
         if key == "spin_pole_ecliptic_deg" and isinstance(value, list):
-            return VectorValueWidget(value, ("黄经", "黄纬"), "°")
+            return VectorValueWidget(value, ("黄经", "黄纬"), "°", label=full_path)
         if key == "direction_body" and isinstance(value, list):
             return DirectionBodyWidget(value, "zh")
         if isinstance(value, list) and len(value) in {2, 3} and all(
             isinstance(item, (int, float)) for item in value
         ):
             labels = ("x", "y", "z")[: len(value)]
-            return VectorValueWidget(value, labels, unit)
+            return VectorValueWidget(value, labels, unit, label=full_path)
         if key in UNIT_CHOICES and isinstance(value, (int, float)):
-            return UnitValueWidget(value, UNIT_CHOICES[key], editable_unit=True)
+            return UnitValueWidget(value, UNIT_CHOICES[key], editable_unit=True, label=full_path)
         if unit and (value is None or isinstance(value, (int, float))):
-            return UnitValueWidget(value, ((unit, 1.0),), editable_unit=False)
+            return UnitValueWidget(value, ((unit, 1.0),), editable_unit=False, label=full_path)
         return None
 
     def _widget_value(self, widget):
         if isinstance(widget, BooleanFieldWidget):
             return widget.value()
         if isinstance(widget, (UnitValueWidget, VectorValueWidget, DirectionBodyWidget)):
+            return widget.value()
+        if isinstance(widget, NumericLineEdit):
             return widget.value()
         if isinstance(widget, QComboBox):
             data = widget.currentData()
@@ -746,10 +811,9 @@ class ParameterForm(QWidget):
     def _filter_echo_sections(self, stage_data: dict, sections: dict[str, list]) -> dict[str, list]:
         target = stage_data.get("target", {})
         frame = str(target.get("spin_pole_frame", "equatorial")).lower()
-        if frame in {"icrs", "equatorial", "equtorial"}:
-            hidden_spin = "target.spin_pole_ecliptic_deg"
-        else:
-            hidden_spin = "target.spin_pole_icrs_deg"
+        hidden_spin = (
+            "target.spin_pole_icrs_deg" if frame == "ecliptic" else "target.spin_pole_ecliptic_deg"
+        )
         if "target" in sections:
             sections["target"] = [
                 (path, value) for path, value in sections["target"] if path != hidden_spin
@@ -765,8 +829,33 @@ class ParameterForm(QWidget):
                     if path in {"scattering_spot.enabled", "scattering_power"}
                 ]
 
+        noise_enabled = stage_data.get("snr_db") is not None
+        noise_fields = [
+            (path, value)
+            for path, value in sections.get("noise", [])
+            if path != "noise_enabled" and not (path == "snr_db" and value is None)
+        ]
+        if not noise_enabled:
+            noise_fields = [
+                (path, value) for path, value in noise_fields if path not in {"snr_db", "seed"}
+            ]
+        noise_fields.insert(0, ("noise_enabled", noise_enabled))
+        sections["noise"] = noise_fields
+        # Keep SNR/seed out of the RF card so spacing there stays unchanged.
+        if "radar_parameters" in sections:
+            sections["radar_parameters"] = [
+                (path, value)
+                for path, value in sections["radar_parameters"]
+                if path not in {"noise_enabled", "snr_db", "seed"}
+            ]
+            if not sections["radar_parameters"]:
+                sections.pop("radar_parameters", None)
+
         # Waveform type is owned by observation; hide the echo mirror.
         waveform_type = self._active_waveform_type(stage_data)
+        scattering_model = str(stage_data.get("scattering_model", "mesh")).lower()
+        if self.point_target:
+            scattering_model = "point_target"
         for group_name, fields in list(sections.items()):
             filtered = []
             for path, value in fields:
@@ -774,11 +863,50 @@ class ParameterForm(QWidget):
                     continue
                 if waveform_type == "continuous_wave" and path in ECHO_CHIRP_ONLY_FIELDS:
                     continue
+                if scattering_model == "point_target":
+                    if path in {
+                        "model_path",
+                        "scattering_power",
+                        "scattering_spot.enabled",
+                        "scattering_spot.direction_body",
+                        "scattering_spot.radius_deg",
+                        "scattering_spot.strength",
+                        "target.rotation_period_s",
+                        "target.initial_phase_deg",
+                        "target.spin_pole_frame",
+                        "target.spin_pole_icrs_deg",
+                        "target.spin_pole_ecliptic_deg",
+                    }:
+                        continue
+                elif path.startswith("point_target."):
+                    continue
                 filtered.append((path, value))
             sections[group_name] = filtered
+            if not filtered:
+                sections.pop(group_name, None)
         return sections
 
     def _filter_observation_sections(self, stage_data: dict, sections: dict[str, list]) -> dict[str, list]:
+        waveform_type = str((stage_data.get("waveform") or {}).get("type") or "continuous_wave")
+        if "waveform" in sections:
+            sections["waveform"] = [
+                item for item in sections["waveform"] if item[0] != "waveform.type"
+            ]
+            if not sections["waveform"]:
+                sections.pop("waveform", None)
+        if waveform_type == "continuous_wave":
+            for name in ("radar_system", "receiver_sampling", "plan"):
+                sections.pop(name, None)
+        else:
+            sections.pop("receive", None)
+            # Chirp ADC windows use target.extent_path_m with pre/post guards.
+            # Keep the JSON path under target, but show the control here.
+            target_group = stage_data.get("target") or {}
+            extent = target_group.get("extent_path_m", 0.0)
+            sampling_fields = sections.setdefault("receiver_sampling", [])
+            if not any(path == "target.extent_path_m" for path, _ in sampling_fields):
+                sampling_fields.append(("target.extent_path_m", extent))
+
         target = stage_data.get("target", {})
         is_horizons = str(target.get("state", "")) == "horizons_vectors"
         geometry = sections.get("geometry", [])
@@ -791,6 +919,23 @@ class ParameterForm(QWidget):
                 ]
                 if not sections["geometry"]:
                     sections.pop("geometry", None)
+
+        # Drop decorative / legacy campaign identity fields.
+        campaign_fields = sections.get("campaign", [])
+        if campaign_fields:
+            drop = {
+                "campaign.id",
+                "campaign.target_id",
+                "campaign.target_name",
+                "campaign.target_object_type",
+                "campaign.query_start_utc",
+                "campaign.query_end_utc",
+            }
+            kept = [(path, value) for path, value in campaign_fields if path not in drop]
+            if kept:
+                sections["campaign"] = kept
+            else:
+                sections.pop("campaign", None)
 
         schedule = stage_data.get("schedule", {})
         selection = str(schedule.get("selection", "manual"))
@@ -806,6 +951,21 @@ class ParameterForm(QWidget):
                 sections["plan"] = [(path, value) for path, value in plan if path not in auto_only]
             else:
                 sections["plan"] = [(path, value) for path, value in plan if path not in manual_only]
+
+        # Hide station IDs; target ID only for Horizons.
+        for group_name in ("transmitter", "receiver", "target"):
+            fields = sections.get(group_name)
+            if not fields:
+                continue
+            filtered = []
+            for path, value in fields:
+                if path.endswith(".id"):
+                    if group_name == "target" and is_horizons:
+                        filtered.append((path, value))
+                    continue
+                filtered.append((path, value))
+            sections[group_name] = filtered
+
         return sections
 
     def _active_waveform_type(self, echo_stage: dict | None = None) -> str:
@@ -819,12 +979,97 @@ class ParameterForm(QWidget):
             return str(echo_stage.get("waveform", {}).get("type", "continuous_wave"))
         return "continuous_wave"
 
+    def _strip_inapplicable_fields(self, config: dict) -> None:
+        observation = config.get("observation")
+        echo = config.get("echo")
+        inversion = config.get("inversion")
+        waveform_type = "continuous_wave"
+        if isinstance(observation, dict):
+            waveform_type = str(
+                (observation.get("waveform") or {}).get("type") or waveform_type
+            )
+            if waveform_type == "lfm_chirp":
+                raise ValueError("waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
+            if waveform_type == "continuous_wave":
+                for key in ("schedule", "radar_system", "receiver_sampling"):
+                    observation.pop(key, None)
+                waveform = observation.get("waveform")
+                if isinstance(waveform, dict):
+                    for key in ("prf_hz", "pulse_width_s"):
+                        waveform.pop(key, None)
+            elif waveform_type == "chirp_pulse_train":
+                observation.pop("receive", None)
+        if isinstance(echo, dict):
+            echo.pop("noise_enabled", None)
+            model = str(echo.get("scattering_model", "mesh")).lower()
+            if model == "point_target":
+                for key in ECHO_MESH_ONLY:
+                    echo.pop(key, None)
+            else:
+                echo.pop("point_target", None)
+            echo_waveform = echo.get("waveform")
+            if isinstance(echo_waveform, dict) and waveform_type == "continuous_wave":
+                for key in ("bandwidth_hz", "baseband_convention"):
+                    echo_waveform.pop(key, None)
+        if isinstance(inversion, dict):
+            drop = INVERSION_CHIRP_ONLY if waveform_type == "continuous_wave" else INVERSION_CW_ONLY
+            if waveform_type in {"continuous_wave", "chirp_pulse_train"}:
+                for key in drop:
+                    inversion.pop(key, None)
+
+    def _apply_waveform_event_source(self, observation: dict, waveform_type: str) -> None:
+        if waveform_type == "continuous_wave":
+            schedule = observation.get("schedule") or {}
+            receive = dict(observation.get("receive") or {})
+            receive.setdefault(
+                "start_utc",
+                schedule.get("start_utc") or "2026-01-01T00:00:00Z",
+            )
+            receive.setdefault("duration_s", 60.0)
+            receive.setdefault("sample_rate_hz", 16.0)
+            observation["receive"] = receive
+            for key in ("schedule", "radar_system", "receiver_sampling"):
+                observation.pop(key, None)
+            waveform = observation.setdefault("waveform", {})
+            waveform["type"] = "continuous_wave"
+            for key in ("prf_hz", "pulse_width_s"):
+                waveform.pop(key, None)
+            return
+        receive = observation.get("receive") or {}
+        schedule = dict(observation.get("schedule") or {})
+        start = receive.get("start_utc") or schedule.get("start_utc") or "2026-01-01T00:00:00Z"
+        schedule.setdefault("start_utc", start)
+        schedule.setdefault("end_utc", schedule.get("start_utc"))
+        schedule.setdefault("selection", "manual")
+        duration = float(receive.get("duration_s") or 30.0)
+        schedule.setdefault(
+            "runs",
+            [{"tx_start_utc": schedule["start_utc"], "tx_duration_s": duration}],
+        )
+        observation["schedule"] = schedule
+        observation.pop("receive", None)
+        observation.setdefault(
+            "radar_system",
+            {"mode": "monostatic_switching", "switch_time_s": 1.0, "safety_margin_s": 1.0},
+        )
+        observation.setdefault(
+            "receiver_sampling",
+            {"fast_sample_rate_hz": 250000.0, "pre_guard_s": 0.001, "post_guard_s": 0.001},
+        )
+        waveform = observation.setdefault("waveform", {})
+        waveform["type"] = "chirp_pulse_train"
+        for key, value in OBSERVATION_WAVEFORM_DEFAULTS["chirp_pulse_train"].items():
+            waveform.setdefault(key, copy.deepcopy(value))
+
     def _normalize_echo_stage(self, echo: dict) -> None:
         target = echo.get("target")
         if isinstance(target, dict):
             frame = str(target.get("spin_pole_frame", "equatorial")).lower()
             if frame in {"icrs", "equtorial"}:
-                target["spin_pole_frame"] = "equatorial"
+                raise ValueError(
+                    "echo.target.spin_pole_frame 已废弃值 "
+                    f"{frame!r}；请使用 equatorial 或 ecliptic"
+                )
             target.setdefault("spin_pole_frame", "equatorial")
             frame = str(target.get("spin_pole_frame", "equatorial")).lower()
             if frame == "ecliptic":
@@ -846,13 +1091,11 @@ class ParameterForm(QWidget):
         waveform = echo.setdefault("waveform", {})
         waveform_type = str(waveform.get("type") or self._active_waveform_type())
         if waveform_type == "lfm_chirp":
-            waveform_type = "chirp_pulse_train"
-            waveform["type"] = waveform_type
+            raise ValueError("waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
         for key, value in ECHO_WAVEFORM_DEFAULTS.get(waveform_type, {}).items():
             waveform.setdefault(key, copy.deepcopy(value))
 
     def _normalize_observation_bodies(self, observation: dict) -> None:
-        self._migrate_legacy_receive(observation)
         self._normalize_horizons_target(observation)
         target = observation.get("target")
         if isinstance(target, dict):
@@ -864,29 +1107,15 @@ class ParameterForm(QWidget):
                 observation[role] = self._normalize_state_group(group, role=role)
         waveform = observation.setdefault("waveform", {})
         if waveform.get("type") == "lfm_chirp":
-            waveform["type"] = "chirp_pulse_train"
+            raise ValueError("waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
         waveform_type = str(waveform.get("type", "continuous_wave"))
         for key, value in OBSERVATION_WAVEFORM_DEFAULTS.get(waveform_type, {}).items():
             waveform.setdefault(key, copy.deepcopy(value))
-
-    def _migrate_legacy_receive(self, observation: dict) -> None:
-        receive = observation.pop("receive", None)
-        if not isinstance(receive, dict):
-            return
-        campaign = observation.setdefault("campaign", {})
-        if receive.get("start_utc") and not campaign.get("query_start_utc"):
-            campaign["query_start_utc"] = receive["start_utc"]
 
     def _normalize_horizons_target(self, observation: dict) -> None:
         target = observation.get("target")
         if not isinstance(target, dict):
             return
-        if "horizons_id" in target:
-            target.setdefault("id", target["horizons_id"])
-            target.pop("horizons_id", None)
-        if "id_type" in target:
-            target.setdefault("object_type", target["id_type"])
-            target.pop("id_type", None)
         value = target.get("object_type")
         if isinstance(value, str):
             normalized = HORIZONS_ID_TYPE_ALIASES.get(value.strip().lower(), value.strip())
@@ -896,11 +1125,9 @@ class ParameterForm(QWidget):
     def _ensure_horizons_ephemeris(self, observation: dict) -> None:
         target = observation.get("target")
         if not isinstance(target, dict) or target.get("state") != "horizons_vectors":
+            observation.pop("ephemeris", None)
             return
         ephemeris = observation.setdefault("ephemeris", {})
-        for key in EPHEMERIS_FIELD_ORDER:
-            if key in target:
-                ephemeris.setdefault(key, target.pop(key))
         for key, value in EPHEMERIS_FIELD_DEFAULTS.items():
             ephemeris.setdefault(key, copy.deepcopy(value))
 
@@ -922,6 +1149,8 @@ class ParameterForm(QWidget):
 
         normalized: dict = {}
         for key in COMMON_FIELD_ORDER:
+            if key == "id" and state != "horizons_vectors":
+                continue
             if key in group:
                 normalized[key] = group[key]
         normalized["state"] = state
@@ -929,6 +1158,8 @@ class ParameterForm(QWidget):
             normalized[key] = self._state_field_value(key, group)
         for key, value in group.items():
             if key in normalized or key in _ALL_STATE_FIELD_KEYS:
+                continue
+            if key == "id" and state != "horizons_vectors":
                 continue
             if key in {"geodetic_time_dependent", "linear_motion", "initial_geodetic_coordinates"}:
                 continue
@@ -942,8 +1173,6 @@ class ParameterForm(QWidget):
             return group["position0_m"]
         if key == "position0_m" and "position_m" in group:
             return group["position_m"]
-        if key == "id" and "name" in group:
-            return group["name"]
         return copy.deepcopy(STATE_DEFAULTS.get(key, ""))
 
     def _sync_into_config(self) -> None:
@@ -951,9 +1180,7 @@ class ParameterForm(QWidget):
             return
         updated = self.collect()
         if self._active_stage == "observation" and self.monostatic:
-            transmitter = updated.get("observation", {}).get("transmitter")
-            if isinstance(transmitter, dict):
-                updated.setdefault("observation", {})["receiver"] = copy.deepcopy(transmitter)
+            updated.setdefault("observation", {}).pop("receiver", None)
         # Keep the same dict object so the main window's config_data stays linked.
         self._config.clear()
         self._config.update(updated)
@@ -974,6 +1201,7 @@ class ParameterForm(QWidget):
             self._config,
             self._active_stage,
             monostatic=self.monostatic,
+            point_target=self.point_target,
             focus_path=absolute,
             preserve_scroll=True,
         )
@@ -989,6 +1217,7 @@ class ParameterForm(QWidget):
             self._config,
             self._active_stage,
             monostatic=self.monostatic,
+            point_target=self.point_target,
             focus_path=absolute_path,
             preserve_scroll=True,
         )
@@ -1002,9 +1231,46 @@ class ParameterForm(QWidget):
             self._config,
             self._active_stage,
             monostatic=self.monostatic,
+            point_target=self.point_target,
             focus_path="echo.scattering_spot.enabled",
             preserve_scroll=True,
         )
+
+    def _on_noise_enabled_changed(self) -> None:
+        # Match scattering-model toggles: commit without stripping unrelated stages.
+        updated = self.collect(strip=False)
+        self._config.clear()
+        self._config.update(updated)
+        echo = self._config.get("echo")
+        if isinstance(echo, dict):
+            self._normalize_echo_stage(echo)
+            echo.pop("noise_enabled", None)
+        self.render(
+            self._config,
+            self._active_stage,
+            monostatic=self.monostatic,
+            point_target=self.point_target,
+            focus_path="echo.noise_enabled",
+            preserve_scroll=True,
+        )
+
+    def _apply_noise_enabled(self, echo: dict, enabled: bool) -> None:
+        """Map the presentation checkbox onto snr_db without inventing a new schema key."""
+        if enabled:
+            if echo.get("snr_db") is None:
+                draft = self._noise_draft or {}
+                restored = draft.get("snr_db")
+                echo["snr_db"] = 20.0 if restored is None else restored
+                if "seed" in draft and draft["seed"] is not None:
+                    echo["seed"] = draft["seed"]
+            echo.setdefault("seed", 20250729)
+            return
+        if echo.get("snr_db") is not None or "seed" in echo:
+            self._noise_draft = {
+                "snr_db": echo.get("snr_db"),
+                "seed": echo.get("seed"),
+            }
+        echo["snr_db"] = None
 
     def _on_spin_pole_frame_changed(self, full_path: str) -> None:
         absolute = f"{self._active_stage}.{full_path}"
@@ -1030,30 +1296,64 @@ class ParameterForm(QWidget):
             self._config,
             self._active_stage,
             monostatic=self.monostatic,
+            point_target=self.point_target,
             focus_path=absolute,
             preserve_scroll=True,
         )
 
     def _on_waveform_type_changed(self) -> None:
-        self._sync_into_config()
+        updated = self.collect(strip=False)
+        waveform_type = str(
+            (updated.get("observation", {}).get("waveform") or {}).get("type", "continuous_wave")
+        )
+        self._commit_waveform_type(updated, waveform_type)
+
+    def set_waveform_type(self, waveform_type: str) -> None:
+        """Apply the global waveform choice and rebuild the active stage."""
+        if waveform_type not in OBSERVATION_WAVEFORM_DEFAULTS:
+            raise ValueError(f"不支持的波形类型：{waveform_type}")
+        updated = self.collect(strip=False)
+        updated.setdefault("observation", {}).setdefault("waveform", {})["type"] = waveform_type
+        self._commit_waveform_type(updated, waveform_type)
+
+    def _commit_waveform_type(self, updated: dict, waveform_type: str) -> None:
+        if self._active_stage == "observation" and self.monostatic:
+            updated.setdefault("observation", {}).pop("receiver", None)
+        self._config.clear()
+        self._config.update(updated)
         observation = self._config.setdefault("observation", {})
         waveform = observation.setdefault("waveform", {})
-        if waveform.get("type") == "lfm_chirp":
-            waveform["type"] = "chirp_pulse_train"
-        waveform_type = str(waveform.get("type", "continuous_wave"))
+        waveform["type"] = waveform_type
+        self._apply_waveform_event_source(observation, waveform_type)
         for key, value in OBSERVATION_WAVEFORM_DEFAULTS.get(waveform_type, {}).items():
             waveform.setdefault(key, copy.deepcopy(value))
         echo = self._config.setdefault("echo", {})
         echo_waveform = echo.setdefault("waveform", {})
         echo_waveform["type"] = waveform_type
+        if waveform_type == "continuous_wave":
+            for key in ("bandwidth_hz", "baseband_convention"):
+                echo_waveform.pop(key, None)
         for key, value in ECHO_WAVEFORM_DEFAULTS.get(waveform_type, {}).items():
             echo_waveform.setdefault(key, copy.deepcopy(value))
+        inversion = self._config.setdefault("inversion", {})
+        if waveform_type == "continuous_wave":
+            for key in INVERSION_CHIRP_ONLY:
+                inversion.pop(key, None)
+            inversion.setdefault("stft_window_samples", 256)
+            inversion.setdefault("stft_overlap_fraction", 0.75)
+        else:
+            for key in INVERSION_CW_ONLY:
+                inversion.pop(key, None)
+            inversion.setdefault("cpi_duration_s", 16.0)
+            inversion.setdefault("motion_compensation", "auto")
+            inversion.setdefault("period_time_role", "scatter_centroid")
         self._normalize_echo_stage(echo)
+        self._strip_inapplicable_fields(self._config)
         self.render(
             self._config,
             self._active_stage,
             monostatic=self.monostatic,
-            focus_path=f"{self._active_stage}.waveform.type",
+            point_target=self.point_target,
             preserve_scroll=True,
         )
 
@@ -1071,6 +1371,54 @@ class ParameterForm(QWidget):
             self._config,
             self._active_stage,
             monostatic=self.monostatic,
+            point_target=self.point_target,
             focus_path="observation.schedule.selection",
+            preserve_scroll=True,
+        )
+
+    def _on_scattering_model_changed(self) -> None:
+        updated = self.collect(strip=False)
+        model = str((updated.get("echo") or {}).get("scattering_model", "mesh")).lower()
+        self._apply_scattering_model(updated, model)
+
+    def set_scattering_model(self, model: str) -> None:
+        """Apply a scattering-model choice from the echo form."""
+        if model not in {"mesh", "point_target"}:
+            raise ValueError("散射模型必须是 mesh 或 point_target")
+        updated = self.collect(strip=False)
+        self._apply_scattering_model(updated, model)
+
+    def _apply_scattering_model(self, updated: dict, model: str) -> None:
+        if model not in {"mesh", "point_target"}:
+            raise ValueError("散射模型必须是 mesh 或 point_target")
+        self._config.clear()
+        self._config.update(updated)
+        echo = self._config.setdefault("echo", {})
+        echo["scattering_model"] = model
+        self.point_target = model == "point_target"
+        if self.point_target:
+            self._mesh_echo_draft = {
+                key: copy.deepcopy(echo[key])
+                for key in ECHO_MESH_ONLY
+                if key in echo
+            }
+            echo.setdefault("point_target", {"amplitude_scale": 1.0})
+            if isinstance(echo["point_target"], dict):
+                echo["point_target"].setdefault("amplitude_scale", 1.0)
+            for key in ECHO_MESH_ONLY:
+                echo.pop(key, None)
+        else:
+            echo.pop("point_target", None)
+            if self._mesh_echo_draft:
+                for key, value in self._mesh_echo_draft.items():
+                    echo.setdefault(key, copy.deepcopy(value))
+            for key, value in MESH_ECHO_DEFAULTS.items():
+                echo.setdefault(key, copy.deepcopy(value))
+        self._strip_inapplicable_fields(self._config)
+        self.render(
+            self._config,
+            self._active_stage,
+            monostatic=self.monostatic,
+            point_target=self.point_target,
             preserve_scroll=True,
         )

@@ -13,7 +13,10 @@ from .. import storage
 from ..qt_compat import (
     HORIZONTAL,
     VERTICAL,
+    QDesktopServices,
+    QUrl,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QGroupBox,
@@ -33,7 +36,7 @@ from ..qt_compat import (
     NOT_RUNNING,
     Qt,
 )
-from ..schema import STAGE_LABELS, STAGES
+from ..schema import OPTION_LABELS, STAGE_LABELS, STAGES
 from ..storage import now_text, read_json, write_json
 from ..styling import GUI_STYLE
 from .parameter_form import ParameterForm
@@ -54,6 +57,7 @@ class PipelineWindow(QMainWindow):
         self.current_stage = "observation"
         self.monostatic_observation = self._is_monostatic_observation()
         self._bistatic_receiver_backup = None
+        self.echo_preview_html = None
         self.stage_status = {stage: "未运行" for stage in STAGES}
         self.process: QProcess | None = None
         self.process_stage: str | None = None
@@ -97,6 +101,23 @@ class PipelineWindow(QMainWindow):
         toolbar_layout.addLayout(config_row)
 
         run_row = QHBoxLayout()
+        run_row.setSpacing(8)
+        waveform_label = QLabel("发射波形")
+        self.waveform_combo = QComboBox()
+        self.waveform_combo.setObjectName("globalWaveformType")
+        self.waveform_combo.setMinimumWidth(145)
+        for value in ("continuous_wave", "chirp_pulse_train"):
+            self.waveform_combo.addItem(OPTION_LABELS[value], value)
+        run_row.addWidget(waveform_label)
+        run_row.addWidget(self.waveform_combo)
+
+        scattering_label = QLabel("散射模型")
+        self.scattering_model_combo = QComboBox()
+        self.scattering_model_combo.setObjectName("echoScatteringModel")
+        self.scattering_model_combo.setMinimumWidth(145)
+        for value in ("mesh", "point_target"):
+            self.scattering_model_combo.addItem(OPTION_LABELS[value], value)
+
         self.run_name_edit = QLineEdit(self.config_path.stem)
         self.runs_dir_edit = QLineEdit("runs")
         self.python_edit = QLineEdit(sys.executable)
@@ -105,16 +126,30 @@ class PipelineWindow(QMainWindow):
         self.run_all_btn = QPushButton("运行完整 pipeline")
         self.stop_btn = QPushButton("中止")
         self.stop_btn.setEnabled(False)
+        self.preview_btn = QPushButton("查看回波")
+        self.preview_btn.setObjectName("previewButton")
+        self.preview_btn.setEnabled(False)
+        self.preview_btn.setProperty("previewReady", False)
+        self.preview_btn.setToolTip("回波仿真完成后可查看交互预览")
         run_row.addWidget(QLabel("实验名"))
         run_row.addWidget(self.run_name_edit, 1)
         run_row.addWidget(QLabel("输出目录"))
         run_row.addWidget(self.runs_dir_edit, 1)
         run_row.addWidget(QLabel("Python"))
         run_row.addWidget(self.python_edit, 2)
-        run_row.addWidget(self.run_btn)
-        run_row.addWidget(self.run_all_btn)
-        run_row.addWidget(self.stop_btn)
         toolbar_layout.addLayout(run_row)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        self.progress.setFormat("就绪")
+        self.progress.setMinimumWidth(180)
+        self.progress.setMinimumHeight(26)
+        action_row.addWidget(self.progress, 1)
+        for button in (self.run_btn, self.run_all_btn, self.stop_btn, self.preview_btn):
+            action_row.addWidget(button)
+        toolbar_layout.addLayout(action_row)
         layout.addWidget(toolbar)
 
         main_splitter = QSplitter(HORIZONTAL)
@@ -163,9 +198,14 @@ class PipelineWindow(QMainWindow):
         center_layout = QVBoxLayout(center)
         center_layout.setContentsMargins(14, 12, 14, 12)
         center_layout.setSpacing(8)
-        self.stage_title = QLabel()
-        self.stage_title.setObjectName("panelTitle")
-        center_layout.addWidget(self.stage_title)
+        self.scattering_model_control = QWidget()
+        scattering_layout = QHBoxLayout(self.scattering_model_control)
+        scattering_layout.setContentsMargins(0, 0, 0, 0)
+        scattering_layout.setSpacing(8)
+        scattering_layout.addWidget(scattering_label)
+        scattering_layout.addWidget(self.scattering_model_combo)
+        scattering_layout.addStretch(1)
+        center_layout.addWidget(self.scattering_model_control)
         self.monostatic_checkbox = QCheckBox("单基站观测：接收站沿用发射站参数")
         self.monostatic_checkbox.setChecked(self.monostatic_observation)
         self.monostatic_checkbox.toggled.connect(self._on_monostatic_toggled)
@@ -187,20 +227,6 @@ class PipelineWindow(QMainWindow):
         work_splitter.setStretchFactor(0, 3)
         work_splitter.setStretchFactor(1, 1)
 
-        progress_row = QHBoxLayout()
-        progress_row.setContentsMargins(2, 0, 2, 0)
-        self.status_label = QLabel("就绪")
-        self.status_label.setObjectName("statusText")
-        self.status_label.setWordWrap(True)
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        self.progress.setFormat("就绪")
-        self.progress.setMinimumHeight(26)
-        progress_row.addWidget(self.status_label, 1)
-        progress_row.addWidget(self.progress, 2)
-        work_column_layout.addLayout(progress_row)
-
         main_splitter.addWidget(work_column)
         main_splitter.setSizes((220, 1100))
         main_splitter.setStretchFactor(0, 0)
@@ -214,23 +240,73 @@ class PipelineWindow(QMainWindow):
         self.run_btn.clicked.connect(self._run_current_stage)
         self.run_all_btn.clicked.connect(self._run_full_pipeline)
         self.stop_btn.clicked.connect(self._stop_pipeline)
+        self.preview_btn.clicked.connect(self._open_echo_preview)
+        self.waveform_combo.currentIndexChanged.connect(self._on_waveform_combo_changed)
+        self.scattering_model_combo.currentIndexChanged.connect(
+            self._on_scattering_model_combo_changed
+        )
+
+    def _sync_mode_combos(self) -> None:
+        waveform = str(
+            ((self.config_data.get("observation") or {}).get("waveform") or {}).get(
+                "type", "continuous_wave"
+            )
+        )
+        scattering = str(
+            (self.config_data.get("echo") or {}).get("scattering_model", "mesh")
+        )
+        self.waveform_combo.blockSignals(True)
+        self.scattering_model_combo.blockSignals(True)
+        self.waveform_combo.setCurrentIndex(max(0, self.waveform_combo.findData(waveform)))
+        self.scattering_model_combo.setCurrentIndex(
+            max(0, self.scattering_model_combo.findData(scattering))
+        )
+        self.waveform_combo.blockSignals(False)
+        self.scattering_model_combo.blockSignals(False)
+
+    def _on_waveform_combo_changed(self) -> None:
+        waveform = str(self.waveform_combo.currentData() or "continuous_wave")
+        try:
+            self.parameter_form.set_waveform_type(waveform)
+            self._refresh_stage_chrome()
+        except Exception as exc:
+            QMessageBox.critical(self, "参数错误", str(exc))
+            self._sync_mode_combos()
+
+    def _on_scattering_model_combo_changed(self) -> None:
+        model = str(self.scattering_model_combo.currentData() or "mesh")
+        try:
+            self.parameter_form.set_scattering_model(model)
+            self._refresh_stage_chrome()
+        except Exception as exc:
+            QMessageBox.critical(self, "参数错误", str(exc))
+            self._sync_mode_combos()
 
     def _load_config(self, path: Path) -> dict:
-        return pipeline.normalize_parameter_ownership(
-            pipeline.pipeline_config_from_any(read_json(path, {}))
-        )
+        return pipeline.canonical_pipeline_config(read_json(path, {}))
 
     def _is_monostatic_observation(self) -> bool:
         observation = self.config_data.get("observation", {})
         transmitter = observation.get("transmitter")
         receiver = observation.get("receiver")
-        return isinstance(transmitter, dict) and isinstance(receiver, dict) and transmitter == receiver
+        if not isinstance(transmitter, dict):
+            return False
+        if receiver is None:
+            return True
+        if not isinstance(receiver, dict):
+            return False
+        # Ignore decorative name differences when comparing geometry.
+        left = {k: v for k, v in transmitter.items() if k not in {"id", "name", "same_as"}}
+        right = {k: v for k, v in receiver.items() if k not in {"id", "name", "same_as"}}
+        return left == right
+
+    def _is_point_target(self) -> bool:
+        echo = self.config_data.get("echo", {})
+        return str(echo.get("scattering_model", "mesh")).lower() == "point_target"
 
     def _apply_monostatic_receiver(self) -> None:
         observation = self.config_data.setdefault("observation", {})
-        transmitter = observation.get("transmitter")
-        if isinstance(transmitter, dict):
-            observation["receiver"] = copy.deepcopy(transmitter)
+        observation.pop("receiver", None)
 
     def _on_monostatic_toggled(self, checked: bool) -> None:
         try:
@@ -259,7 +335,12 @@ class PipelineWindow(QMainWindow):
                 previous = self.config_data.get("observation", {}).get("receiver")
                 if isinstance(previous, dict):
                     observation["receiver"] = copy.deepcopy(previous)
-        self.config_data = pipeline.normalize_parameter_ownership(synced)
+        # ParameterForm deliberately keeps a reference to this dict while it
+        # rebuilds dynamic widgets.  Replacing it here leaves the form writing
+        # to an orphaned model after the next state change.
+        normalized = pipeline.normalize_parameter_ownership(synced)
+        self.config_data.clear()
+        self.config_data.update(normalized)
         if apply_monostatic and self.current_stage == "observation" and self.monostatic_observation:
             self._apply_monostatic_receiver()
 
@@ -276,26 +357,31 @@ class PipelineWindow(QMainWindow):
         self.stage_buttons[stage].setFocus(Qt.FocusReason.OtherFocusReason)
         self.config_path_edit.deselect()
 
-    def _render_stage(self, *, preserve_scroll: bool = False) -> None:
+    def _refresh_stage_chrome(self) -> None:
         for stage, button in self.stage_buttons.items():
             button.setProperty("activeStage", stage == self.current_stage)
             button.style().unpolish(button)
             button.style().polish(button)
             self.stage_status_labels[stage].setText(f"状态：{self.stage_status[stage]}")
         title = STAGE_LABELS[self.current_stage]
-        self.stage_title.setText(title)
+        self.scattering_model_control.setVisible(self.current_stage == "echo")
         self.monostatic_checkbox.setVisible(self.current_stage == "observation")
         self.monostatic_checkbox.blockSignals(True)
         self.monostatic_checkbox.setChecked(self.monostatic_observation)
         self.monostatic_checkbox.blockSignals(False)
+        self._sync_mode_combos()
+        self.run_btn.setText(f"运行：{title.split('. ')[-1]}")
+        self.config_path_edit.deselect()
+
+    def _render_stage(self, *, preserve_scroll: bool = False) -> None:
         self.parameter_form.render(
             self.config_data,
             stage=self.current_stage,
             monostatic=self.monostatic_observation,
+            point_target=self._is_point_target(),
             preserve_scroll=preserve_scroll,
         )
-        self.run_btn.setText(f"运行：{title.split('. ')[-1]}")
-        self.config_path_edit.deselect()
+        self._refresh_stage_chrome()
 
     def _choose_config(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
@@ -323,16 +409,17 @@ class PipelineWindow(QMainWindow):
     def _validate_config(self) -> bool:
         try:
             self._sync_current_stage()
-            config = pipeline.normalize_parameter_ownership(self.config_data)
-            pipeline.require_sections(config)
+            validated = pipeline.canonical_pipeline_config(self.config_data)
+            self.config_data.clear()
+            self.config_data.update(validated)
             pipeline.prepared_configs(
-                config, pipeline.abs_path(self.runs_dir_edit.text() or "runs") / "validation"
+                self.config_data, pipeline.abs_path(self.runs_dir_edit.text() or "runs") / "validation"
             )
         except Exception as exc:
             QMessageBox.critical(self, "配置错误", str(exc))
             return False
         self._append_log(f"[{now_text()}] 配置校验通过。")
-        self.status_label.setText("配置校验通过")
+        self.progress.setFormat("配置校验通过")
         return True
 
     def _save_config(self) -> None:
@@ -378,7 +465,7 @@ class PipelineWindow(QMainWindow):
             self.run_btn.setEnabled(True)
             self.run_all_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
-            self.status_label.setText("全部完成")
+            self.progress.setFormat("全部完成")
             return
         stage = self._pending_stages.pop(0)
         try:
@@ -417,8 +504,7 @@ class PipelineWindow(QMainWindow):
         self.stage_status[stage] = "执行中"
         self._render_stage_status_only()
         self.progress.setValue(0)
-        self.progress.setFormat("运行中")
-        self.status_label.setText(f"正在执行 {STAGE_LABELS[stage]}")
+        self.progress.setFormat(f"正在执行 {STAGE_LABELS[stage]}")
         self._append_log(f"\n[{now_text()}] 启动 {STAGE_LABELS[stage]}")
         self._append_log("命令：" + " ".join(map(str, command)))
         self.process.start(str(command[0]), [str(item) for item in command[1:]])
@@ -504,7 +590,6 @@ class PipelineWindow(QMainWindow):
                 stage = str(payload.get("stage", self.process_stage or "pipeline"))
                 self.progress.setValue(max(0, min(100, percent)))
                 self.progress.setFormat(f"{percent}%  {message}")
-                self.status_label.setText(f"{stage}: {message}")
                 return
             except Exception:
                 pass
@@ -528,6 +613,8 @@ class PipelineWindow(QMainWindow):
             self.progress.setFormat("完成")
             self._append_log(f"[{now_text()}] {STAGE_LABELS.get(stage, stage)} 完成。")
             self._render_stage_status_only()
+            if stage == "echo" and self.process_run_dir is not None:
+                self._prepare_echo_preview(self.process_run_dir)
             self._run_next_pending_stage()
             return
         if stage:
@@ -536,11 +623,53 @@ class PipelineWindow(QMainWindow):
         self.run_btn.setEnabled(True)
         self.run_all_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        self.progress.setFormat("失败")
-        self.status_label.setText(f"失败：退出码 {exit_code}")
+        self.progress.setFormat(f"失败：退出码 {exit_code}")
         self._append_log(f"[{now_text()}] 失败，退出码 {exit_code}。")
         self._render_stage_status_only()
         QMessageBox.critical(self, "运行失败", f"阶段失败，退出码 {exit_code}")
 
     def _append_log(self, text: str) -> None:
         self.log.append(text)
+
+    def _set_preview_ready(self, ready: bool) -> None:
+        self.preview_btn.setEnabled(bool(ready))
+        self.preview_btn.setProperty("previewReady", bool(ready))
+        self.preview_btn.style().unpolish(self.preview_btn)
+        self.preview_btn.style().polish(self.preview_btn)
+        if ready:
+            self.preview_btn.setToolTip("回波已生成，点击打开 Plotly 交互预览")
+        else:
+            self.preview_btn.setToolTip("回波仿真完成后可查看交互预览")
+
+    def _prepare_echo_preview(self, run_dir: Path) -> None:
+        echo_npz = run_dir / "echo" / "echo.npz"
+        if not echo_npz.exists():
+            self._set_preview_ready(False)
+            self._append_log(f"[{now_text()}] 未找到回波文件，无法生成预览：{echo_npz}")
+            return
+        try:
+            from .echo_preview import build_echo_preview_html, echo_preview_html_path
+
+            html_path = echo_preview_html_path(run_dir)
+            build_echo_preview_html(echo_npz, html_path)
+            self.echo_preview_html = html_path
+            self._set_preview_ready(True)
+            self._append_log(f"[{now_text()}] 回波预览已就绪：{html_path}")
+        except Exception as exc:
+            self._set_preview_ready(False)
+            self.echo_preview_html = None
+            self._append_log(f"[{now_text()}] 回波预览生成失败：{exc}")
+
+    def _open_echo_preview(self) -> None:
+        if not self.echo_preview_html or not Path(self.echo_preview_html).exists():
+            # Try rebuild from current run directory.
+            run_dir = self._run_directory()
+            echo_npz = run_dir / "echo" / "echo.npz"
+            if echo_npz.exists():
+                self._prepare_echo_preview(run_dir)
+        if not self.echo_preview_html or not Path(self.echo_preview_html).exists():
+            QMessageBox.information(self, "回波预览", "尚无可用回波预览，请先成功运行回波仿真。")
+            return
+        from .echo_preview import open_echo_preview_in_browser
+
+        open_echo_preview_in_browser(Path(self.echo_preview_html))

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from ..qt_compat import QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QSize, QSizePolicy, Qt, QVBoxLayout, QWidget
@@ -11,6 +13,52 @@ from ..storage import format_value, parse_value
 EXPANDING = QSizePolicy.Policy.Expanding
 FIXED = QSizePolicy.Policy.Fixed
 
+
+class NumericInputError(ValueError):
+    """A user-facing numeric draft cannot be committed to configuration."""
+
+
+def parse_finite_number(raw: str, label: str, *, integer: bool = False) -> int | float:
+    value = parse_value(raw)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise NumericInputError(f"{label} 必须是有限数字")
+    if integer:
+        if isinstance(value, float) and not value.is_integer():
+            raise NumericInputError(f"{label} 必须是整数")
+        return int(value)
+    return float(value)
+
+
+class NumericLineEdit(QLineEdit):
+    """A scalar editor with immediate feedback and strict commit semantics."""
+
+    def __init__(self, value, *, label: str, integer: bool = False):
+        super().__init__(format_value(value))
+        self._numeric_label = label
+        self._integer = integer
+        self.textChanged.connect(self._refresh_validity)
+        self._refresh_validity()
+
+    def _refresh_validity(self) -> None:
+        text = self.text().strip()
+        message = ""
+        if text:
+            try:
+                parse_finite_number(text, self._numeric_label, integer=self._integer)
+            except NumericInputError as exc:
+                message = str(exc)
+        invalid = bool(message)
+        if self.property("inputError") != invalid:
+            self.setProperty("inputError", invalid)
+            self.style().unpolish(self)
+            self.style().polish(self)
+        self.setToolTip(message or "请输入有限数字；可使用千分位分隔符，例如 299,792,458。")
+
+    def value(self) -> int | float:
+        return parse_finite_number(
+            self.text(), self._numeric_label, integer=self._integer
+        )
+
 class NoWheelComboBox(QComboBox):
     """A combo box that ignores mouse-wheel changes to avoid accidental edits."""
 
@@ -18,13 +66,21 @@ class NoWheelComboBox(QComboBox):
         event.ignore()
 
 class UnitValueWidget(QWidget):
-    def __init__(self, value, unit_options: tuple[tuple[str, float], ...], editable_unit: bool = False):
+    def __init__(
+        self,
+        value,
+        unit_options: tuple[tuple[str, float], ...],
+        editable_unit: bool = False,
+        *,
+        label: str = "该字段",
+    ):
         super().__init__()
         self.setObjectName("unitValue")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedHeight(CONTROL_HEIGHT)
         self.setSizePolicy(EXPANDING, FIXED)
         self.unit_options = unit_options
+        self._numeric_label = label
         layout = QHBoxLayout(self)
         layout.setContentsMargins(1, 1, 1, 1)
         layout.setSpacing(0)
@@ -33,6 +89,7 @@ class UnitValueWidget(QWidget):
         self.edit.setFixedHeight(CONTROL_HEIGHT - 2)
         unit_label, multiplier = self._best_unit(float(value) if isinstance(value, (int, float)) else 0.0)
         self.edit.setText(format_value(float(value) / multiplier if isinstance(value, (int, float)) else value))
+        self.edit.textChanged.connect(self._refresh_validity)
         layout.addWidget(self.edit, 1)
         if editable_unit and len(unit_options) > 1:
             self.unit_combo = NoWheelComboBox()
@@ -55,6 +112,7 @@ class UnitValueWidget(QWidget):
             self.unit_suffix = unit
             unit.setVisible(bool(unit_options[0][0]))
         self.setFocusProxy(self.edit)
+        self._refresh_validity()
 
     def _best_unit(self, value: float) -> tuple[str, float]:
         abs_value = abs(value)
@@ -66,21 +124,41 @@ class UnitValueWidget(QWidget):
     def sizeHint(self):
         return QSize(super().sizeHint().width(), CONTROL_HEIGHT)
 
+    def _refresh_validity(self) -> None:
+        message = ""
+        if self.edit.text().strip():
+            try:
+                parse_finite_number(self.edit.text(), self._numeric_label)
+            except NumericInputError as exc:
+                message = str(exc)
+        invalid = bool(message)
+        if self.property("inputError") != invalid:
+            self.setProperty("inputError", invalid)
+            self.style().unpolish(self)
+            self.style().polish(self)
+        self.edit.setToolTip(message or "请输入有限数字；可使用千分位分隔符，例如 299,792,458。")
+
     def value(self):
-        raw = parse_value(self.edit.text())
-        if not isinstance(raw, (int, float)):
-            return raw
+        raw = parse_finite_number(self.edit.text(), self._numeric_label)
         multiplier = self.unit_combo.currentData() if self.unit_combo else self.unit_options[0][1]
         return float(raw) * float(multiplier)
 
 class VectorValueWidget(QWidget):
-    def __init__(self, value, labels: tuple[str, ...], unit: str | None = None):
+    def __init__(
+        self,
+        value,
+        labels: tuple[str, ...],
+        unit: str | None = None,
+        *,
+        label: str = "该向量",
+    ):
         super().__init__()
         values = list(value) if isinstance(value, list) else []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
         self.edits: list[QLineEdit] = []
+        self._component_labels = tuple(f"{label}.{item}" for item in labels)
         for index, label_text in enumerate(labels):
             row = QVBoxLayout()
             row.setContentsMargins(0, 0, 0, 0)
@@ -93,6 +171,7 @@ class VectorValueWidget(QWidget):
                 values[index] if index < len(values) else 0.0,
                 ((unit, 1.0),) if unit else (("", 1.0),),
                 editable_unit=False,
+                label=self._component_labels[index],
             )
             edit = value_widget.edit
             edit.setAccessibleName(label_text)
@@ -105,7 +184,10 @@ class VectorValueWidget(QWidget):
         self.setFixedHeight(height)
 
     def value(self):
-        return [parse_value(edit.text()) for edit in self.edits]
+        return [
+            parse_finite_number(edit.text(), label)
+            for edit, label in zip(self.edits, self._component_labels)
+        ]
 
 class BooleanFieldWidget(QWidget):
     """An indicator-only boolean editor aligned with the other field editors."""
@@ -141,12 +223,17 @@ class DirectionBodyWidget(VectorValueWidget):
         lon_rad = np.arctan2(vector[1], vector[0])
         lat_rad = np.arcsin(np.clip(vector[2] / np.linalg.norm(vector), -1.0, 1.0))
         labels = ("本体系经度", "本体系纬度") if language == "zh" else ("Body longitude", "Body latitude")
-        super().__init__([float(np.rad2deg(lon_rad)), float(np.rad2deg(lat_rad))], labels, "°")
+        super().__init__(
+            [float(np.rad2deg(lon_rad)), float(np.rad2deg(lat_rad))],
+            labels,
+            "°",
+            label="散射热点方向",
+        )
         self.lon_edit, self.lat_edit = self.edits
 
     def value(self):
-        lon = np.deg2rad(float(parse_value(self.lon_edit.text())))
-        lat = np.deg2rad(float(parse_value(self.lat_edit.text())))
+        lon = np.deg2rad(parse_finite_number(self.lon_edit.text(), "散射热点方向.本体系经度"))
+        lat = np.deg2rad(parse_finite_number(self.lat_edit.text(), "散射热点方向.本体系纬度"))
         return [
             float(np.cos(lat) * np.cos(lon)),
             float(np.cos(lat) * np.sin(lon)),
@@ -154,7 +241,10 @@ class DirectionBodyWidget(VectorValueWidget):
         ]
 
 def np_vector3(value) -> np.ndarray:
-    array = np.asarray(value, dtype=float)
+    try:
+        array = np.asarray(value, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise NumericInputError("散射热点方向必须是三个有限数字") from exc
     if array.shape != (3,) or not np.isfinite(array).all() or np.linalg.norm(array) == 0.0:
-        return np.array([1.0, 0.0, 0.0], dtype=float)
+        raise NumericInputError("散射热点方向必须是非零的三个有限数字")
     return array

@@ -9,7 +9,9 @@ __pycache__/
 .claude/
 CLAUDE.md
 .vscode/
-configs/
 tests/
 .pytest_cache/
-docs/
+.cursor/
+/docs/_not_for_commit/
+pytest.ini
+notebooks/

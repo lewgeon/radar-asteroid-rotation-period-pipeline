@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from ..qt_compat import QFrame, QGridLayout, QLabel, QSize, QSizePolicy, Qt, QTimer, QVBoxLayout, QWidget
+from ..qt_compat import QFrame, QLabel, QSize, QSizePolicy, Qt, QTimer, QVBoxLayout, QWidget
 
 EXPANDING = QSizePolicy.Policy.Expanding
 FIXED = QSizePolicy.Policy.Fixed
 
 LANES_BY_STAGE = {
     "observation": (
-        ("campaign", "target", "transmitter", "receiver"),
-        ("radar_system", "waveform", "receiver_sampling", "plan", "geometry"),
+        ("target", "transmitter", "receiver"),
+        ("waveform", "receive", "radar_system", "receiver_sampling", "plan", "geometry"),
     ),
     "echo": (
-        ("compute", "radar_parameters", "echo_options"),
+        ("compute", "radar_parameters", "noise", "echo_options"),
         ("target", "scattering_spot"),
     ),
     "inversion": (

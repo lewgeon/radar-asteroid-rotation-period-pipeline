@@ -1,0 +1,69 @@
+{
+  "observation": {
+    "target": {
+      "name": "Static point target",
+      "state": "static",
+      "position_m": [17987547480.0, 0.0, 0.0],
+      "extent_path_m": 3000.0
+    },
+    "transmitter": {
+      "name": "Static origin station",
+      "state": "static",
+      "position_m": [0.0, 0.0, 0.0]
+    },
+    "visibility": {
+      "min_tx_elevation_deg": 0.0,
+      "min_rx_elevation_deg": 0.0,
+      "sample_step_s": 30.0
+    },
+    "radar_system": {
+      "mode": "monostatic_switching",
+      "switch_time_s": 1.0,
+      "safety_margin_s": 1.0
+    },
+    "waveform": {
+      "type": "chirp_pulse_train",
+      "prf_hz": 4.0,
+      "pulse_width_s": 0.001
+    },
+    "receiver_sampling": {
+      "fast_sample_rate_hz": 250000.0,
+      "pre_guard_s": 0.001,
+      "post_guard_s": 0.001
+    },
+    "schedule": {
+      "start_utc": "2026-01-01T00:00:00Z",
+      "end_utc": "2026-01-01T00:10:00Z",
+      "selection": "manual",
+      "runs": [
+        {"tx_start_utc": "2026-01-01T00:00:00Z", "tx_duration_s": 30.0}
+      ]
+    }
+  },
+  "echo": {
+    "scattering_model": "point_target",
+    "point_target": {"amplitude_scale": 1.0},
+    "seed": 20260908,
+    "echo_output_reference": "centroid_compensated",
+    "intrapulse_motion_model": "per_pulse_linear",
+    "compute": {"device": "cpu", "dtype": "float32"},
+    "radar": {"carrier_frequency_hz": 1000000.0},
+    "waveform": {
+      "type": "chirp_pulse_train",
+      "bandwidth_hz": 100000.0,
+      "amplitude": 1.0,
+      "baseband_convention": "zero_to_bandwidth"
+    },
+    "snr_db": 30.0
+  },
+  "inversion": {
+    "period_min_s": 5.0,
+    "period_max_s": 60.0,
+    "period_grid_size": 500,
+    "motion_compensation": "auto",
+    "period_time_role": "scatter_centroid",
+    "harmonics": 1,
+    "cpi_duration_s": 4.0,
+    "cpi_hop_duration_s": 1.0
+  }
+}

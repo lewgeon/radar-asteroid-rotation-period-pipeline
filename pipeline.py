@@ -13,17 +13,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# Observation owns transmit timing and receive sampling. Echo owns RF waveform details.
-# Timing fields are injected into the echo child config at prepare time, never dual-edited.
-OBSERVATION_WAVEFORM_KEYS = ("type", "prf_hz", "pulse_width_s", "pulse_fiducial")
+# Observation owns transmit timing. Echo owns RF waveform details.
+# ADC sample rate stays in observation plan / NPZ — not re-injected into echo JSON.
+OBSERVATION_WAVEFORM_KEYS = ("type", "prf_hz", "pulse_width_s")
 ECHO_WAVEFORM_KEYS = ("type", "bandwidth_hz", "amplitude", "baseband_convention")
-ECHO_INJECTED_FROM_OBSERVATION = ("prf_hz", "pulse_width_s", "pulse_fiducial")
 
 
 DEFAULT_CONFIG = {
     "observation": {
         "target": {
-            "id": "linear-test-target",
             "name": "linear-test-target",
             "state": "linear",
             "position0_m": [299_792_458.0, 0.0, 0.0],
@@ -34,22 +32,15 @@ DEFAULT_CONFIG = {
             "state": "static",
             "position_m": [0.0, 0.0, 0.0],
         },
-        "receiver": {
-            "name": "static-origin-receiver",
-            "state": "static",
-            "position_m": [0.0, 0.0, 0.0],
-        },
         "receive": {
             "start_utc": "2026-01-01T00:00:00.000",
             "duration_s": 60.0,
             "sample_rate_hz": 16.0,
         },
-        "solver": {
-            "tolerance_s": 1e-9,
-            "max_iter": 32,
-        },
+        "waveform": {"type": "continuous_wave"},
     },
     "echo": {
+        "scattering_model": "mesh",
         "model_path": "models/ellipsoid.obj",
         "seed": 20250729,
         "echo_output_reference": "raw_baseband",
@@ -86,250 +77,8 @@ DEFAULT_CONFIG = {
         "period_min_s": 8.0,
         "period_max_s": 40.0,
         "period_grid_size": 4000,
-        "motion_compensation": "centroid_geometry",
-        "period_time_role": "scatter_centroid",
     },
 }
-
-
-FRIENDLY_CONFIG_MARKERS = {
-    "GUI配置版本",
-    "GUI Config Version",
-    "说明",
-    "Description",
-}
-
-FRIENDLY_KEY_ALIASES = {
-    "观测解算": "observation",
-    "Observation": "observation",
-    "回波仿真": "echo",
-    "Echo Simulation": "echo",
-    "周期反演": "inversion",
-    "Rotation Inversion": "inversion",
-    "目标参数": "target",
-    "Target": "target",
-    "发射站": "transmitter",
-    "Transmitter": "transmitter",
-    "接收站": "receiver",
-    "Receiver": "receiver",
-    "接收设置": "receive",
-    "Receive": "receive",
-    "求解器": "solver",
-    "Solver": "solver",
-    "计算设置": "compute",
-    "Compute": "compute",
-    "雷达参数": "radar",
-    "Radar": "radar",
-    "波形参数": "waveform",
-    "Waveform": "waveform",
-    "散射热点": "scattering_spot",
-    "Scattering Spot": "scattering_spot",
-    "ID": "id",
-    "名称": "name",
-    "Name": "name",
-    "状态": "state",
-    "State": "state",
-    "目标类型": "object_type",
-    "Object Type": "object_type",
-    "初始位置": "position0_m",
-    "Initial Position": "position0_m",
-    "速度": "velocity_m_s",
-    "Velocity": "velocity_m_s",
-    "位置": "position_m",
-    "Position": "position_m",
-    "纬度": "lat_deg",
-    "Latitude": "lat_deg",
-    "经度": "lon_deg",
-    "Longitude": "lon_deg",
-    "高度": "height_m",
-    "Height": "height_m",
-    "开始时间": "start_utc",
-    "Start Time": "start_utc",
-    "接收时长": "duration_s",
-    "Duration": "duration_s",
-    "采样率": "sample_rate_hz",
-    "Sample Rate": "sample_rate_hz",
-    "相干采集计划": "acquisitions",
-    "Coherent Acquisition Schedule": "acquisitions",
-    "收敛阈值": "tolerance_s",
-    "Tolerance": "tolerance_s",
-    "最大迭代": "max_iter",
-    "Max Iterations": "max_iter",
-    "参考中心": "location",
-    "Reference Center": "location",
-    "参考平面": "refplane",
-    "Reference Plane": "refplane",
-    "星历余量": "padding_s",
-    "Padding": "padding_s",
-    "星历步长": "query_step_s",
-    "Query Step": "query_step_s",
-    "查询分块": "query_chunk_size",
-    "Query Chunk Size": "query_chunk_size",
-    "查询模式": "query_mode",
-    "Query Mode": "query_mode",
-    "查询重试": "query_retries",
-    "Query Retries": "query_retries",
-    "最小重试分块": "min_query_chunk_size",
-    "Min Query Chunk Size": "min_query_chunk_size",
-    "使用缓存": "cache",
-    "Use Cache": "cache",
-    "模型路径": "model_path",
-    "Model Path": "model_path",
-    "随机种子": "seed",
-    "Seed": "seed",
-    "计算设备": "device",
-    "Device": "device",
-    "数值精度": "dtype",
-    "DType": "dtype",
-    "自转周期": "rotation_period_s",
-    "Rotation Period": "rotation_period_s",
-    "初始相位": "initial_phase_deg",
-    "Initial Phase": "initial_phase_deg",
-    "自转轴坐标系": "spin_pole_frame",
-    "Spin Pole Frame": "spin_pole_frame",
-    "自转轴赤道坐标": "spin_pole_icrs_deg",
-    "Spin Pole Equatorial": "spin_pole_icrs_deg",
-    "自转轴黄道坐标": "spin_pole_ecliptic_deg",
-    "Spin Pole Ecliptic": "spin_pole_ecliptic_deg",
-    "散射指数": "scattering_power",
-    "Scattering Power": "scattering_power",
-    "发射照明方向": "incident",
-    "Incident Direction": "incident",
-    "散射方向": "scattered",
-    "Scattered Direction": "scattered",
-    "启用": "enabled",
-    "Enabled": "enabled",
-    "斑块方向": "direction_body",
-    "Spot Direction": "direction_body",
-    "角半径": "radius_deg",
-    "Radius": "radius_deg",
-    "增强倍数": "strength",
-    "Strength": "strength",
-    "载频": "carrier_frequency_hz",
-    "Carrier Frequency": "carrier_frequency_hz",
-    "波形类型": "type",
-    "Waveform Type": "type",
-    "幅度": "amplitude",
-    "Amplitude": "amplitude",
-    "脉冲宽度": "pulse_width_s",
-    "Pulse Width": "pulse_width_s",
-    "Chirp带宽": "bandwidth_hz",
-    "Chirp Bandwidth": "bandwidth_hz",
-    "脉冲重复间隔": "pri_s",
-    "Pulse Repetition Interval": "pri_s",
-    "快时间采样率": "fast_sample_rate_hz",
-    "Fast-time Sample Rate": "fast_sample_rate_hz",
-    "接收窗起点": "receive_window_start_s",
-    "Receive Window Start": "receive_window_start_s",
-    "接收窗时长": "receive_window_duration_s",
-    "Receive Window Duration": "receive_window_duration_s",
-    "首脉冲起点": "first_pulse_start_s",
-    "First Pulse Start": "first_pulse_start_s",
-    "信噪比": "snr_db",
-    "SNR": "snr_db",
-    "回波输出参考系": "echo_output_reference",
-    "Echo Output Reference": "echo_output_reference",
-    "脉内运动模型": "intrapulse_motion_model",
-    "Intrapulse Motion Model": "intrapulse_motion_model",
-    "STFT窗长": "stft_window_samples",
-    "STFT Window": "stft_window_samples",
-    "STFT重叠率": "stft_overlap_fraction",
-    "STFT Overlap": "stft_overlap_fraction",
-    "周期下限": "period_min_s",
-    "Period Min": "period_min_s",
-    "周期上限": "period_max_s",
-    "Period Max": "period_max_s",
-    "周期网格数": "period_grid_size",
-    "Period Grid Size": "period_grid_size",
-}
-
-CANONICAL_TO_FRIENDLY_ZH = {
-    "observation": "观测解算",
-    "echo": "回波仿真",
-    "inversion": "周期反演",
-    "target": "目标参数",
-    "transmitter": "发射站",
-    "receiver": "接收站",
-    "receive": "接收设置",
-    "solver": "求解器",
-    "compute": "计算设置",
-    "radar": "雷达参数",
-    "waveform": "波形参数",
-    "scattering_spot": "散射热点",
-    "id": "ID",
-    "name": "名称",
-    "state": "状态",
-    "object_type": "目标类型",
-    "position0_m": "初始位置",
-    "velocity_m_s": "速度",
-    "position_m": "位置",
-    "lat_deg": "纬度",
-    "lon_deg": "经度",
-    "height_m": "高度",
-    "start_utc": "开始时间",
-    "duration_s": "接收时长",
-    "sample_rate_hz": "采样率",
-    "acquisitions": "相干采集计划",
-    "tolerance_s": "收敛阈值",
-    "max_iter": "最大迭代",
-    "location": "参考中心",
-    "refplane": "参考平面",
-    "padding_s": "星历余量",
-    "query_step_s": "星历步长",
-    "query_chunk_size": "查询分块",
-    "query_mode": "查询模式",
-    "query_retries": "查询重试",
-    "min_query_chunk_size": "最小重试分块",
-    "cache": "使用缓存",
-    "model_path": "模型路径",
-    "seed": "随机种子",
-    "device": "计算设备",
-    "dtype": "数值精度",
-    "rotation_period_s": "自转周期",
-    "initial_phase_deg": "初始相位",
-    "spin_pole_frame": "自转轴坐标系",
-    "spin_pole_icrs_deg": "自转轴赤道坐标",
-    "spin_pole_ecliptic_deg": "自转轴黄道坐标",
-    "scattering_power": "散射指数",
-    "incident": "发射照明方向",
-    "scattered": "散射方向",
-    "enabled": "启用",
-    "direction_body": "斑块方向",
-    "radius_deg": "角半径",
-    "strength": "增强倍数",
-    "carrier_frequency_hz": "载频",
-    "type": "波形类型",
-    "amplitude": "幅度",
-    "pulse_width_s": "脉冲宽度",
-    "bandwidth_hz": "Chirp带宽",
-    "pri_s": "脉冲重复间隔",
-    "fast_sample_rate_hz": "快时间采样率",
-    "receive_window_start_s": "接收窗起点",
-    "receive_window_duration_s": "接收窗时长",
-    "first_pulse_start_s": "首脉冲起点",
-    "snr_db": "信噪比",
-    "echo_output_reference": "回波输出参考系",
-    "intrapulse_motion_model": "脉内运动模型",
-    "stft_window_samples": "STFT窗长",
-    "stft_overlap_fraction": "STFT重叠率",
-    "period_min_s": "周期下限",
-    "period_max_s": "周期上限",
-    "period_grid_size": "周期网格数",
-}
-
-CANONICAL_TO_FRIENDLY_EN = {
-    value: key for key, value in FRIENDLY_KEY_ALIASES.items() if key and key[0].isascii() and " " in key
-}
-CANONICAL_TO_FRIENDLY_EN.update(
-    {
-        "observation": "Observation",
-        "echo": "Echo Simulation",
-        "inversion": "Rotation Inversion",
-        "id": "ID",
-        "snr_db": "SNR",
-        "dtype": "DType",
-    }
-)
 
 
 def parse_args():
@@ -360,7 +109,6 @@ def config_sha256(config):
 
 def build_manifest(config):
     return {
-        "schema_version": int(config.get("schema_version", 1)),
         "created_utc": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
         "config_sha256": config_sha256(config),
         "python_version": sys.version,
@@ -384,144 +132,155 @@ def run_directory(args):
 
 
 def require_sections(config):
-    config = pipeline_config_from_any(config)
-    required = ["observation", "echo", "inversion"]
-    missing = [name for name in required if name not in config]
-    if missing:
-        raise SystemExit(f"流水线配置缺少顶层字段：{missing}")
+    """Validate the pipeline object. ``canonical_pipeline_config`` already
+    requires the three stage sections, so this is a named alias for callers.
+    """
+
+    canonical_pipeline_config(config)
 
 
-def pipeline_config_from_any(config):
-    """Accept either canonical pipeline JSON or GUI-friendly JSON labels."""
+def canonical_pipeline_config(config):
+    """Load the sole supported canonical pipeline configuration shape."""
 
-    if isinstance(config, list):
-        return [pipeline_config_from_any(item) for item in config]
     if not isinstance(config, dict):
-        return config
-    converted = {}
-    for key, value in config.items():
-        if key in FRIENDLY_CONFIG_MARKERS:
-            continue
-        canonical_key = FRIENDLY_KEY_ALIASES.get(key, key)
-        converted[canonical_key] = pipeline_config_from_any(value)
-    _collapse_scattering_power(converted)
+        raise ValueError("pipeline 配置必须是 JSON 对象")
+    return normalize_config(config)
+
+
+def _reject_deprecated_pipeline_keys(config):
+    """Reject v3/deprecated keys at the strict pipeline boundary.
+
+    The pipeline is the authoritative schema-v4 entry; deprecated keys must
+    fail here with a clear message instead of silently passing through to the
+    subprocess.  Observation's own normalizer applies the same policy as
+    defence-in-depth.
+    """
+
+    observation = config.get("observation") or {}
+    inversion = config.get("inversion") or {}
+
+    if "schema_version" in config:
+        raise ValueError("schema_version 已废弃；项目不再使用版本号字段")
+    if "campaign" in observation:
+        raise ValueError("observation.campaign 已废弃；观测窗口请写到 schedule.start_utc / schedule.end_utc")
+    if "solver" in observation:
+        raise ValueError("observation.solver 已废弃；光行时收敛策略由实现内部常量决定")
+
+    waveform = observation.get("waveform") or {}
+    if isinstance(waveform, dict):
+        if waveform.get("type") == "lfm_chirp":
+            raise ValueError("waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
+        if "pulse_fiducial" in waveform:
+            raise ValueError("waveform.pulse_fiducial 已废弃；调度固定为脉冲前沿")
+
+    visibility = observation.get("visibility") or {}
+    if isinstance(visibility, dict) and "ephemeris_step_s" in visibility:
+        raise ValueError("visibility.ephemeris_step_s 已废弃；请使用 visibility.sample_step_s")
+
+    schedule = observation.get("schedule") or {}
+    if isinstance(schedule, dict) and "reference_time_utc" in schedule:
+        raise ValueError("schedule.reference_time_utc 已废弃；请使用 schedule.start_utc")
+
+    sampling = observation.get("receiver_sampling") or {}
+    if isinstance(sampling, dict):
+        if "fs_hz" in sampling:
+            raise ValueError("receiver_sampling.fs_hz 已废弃；请使用 receiver_sampling.fast_sample_rate_hz")
+        if "max_bistatic_path_offset_m" in sampling:
+            raise ValueError("receiver_sampling.max_bistatic_path_offset_m 已废弃；请使用 target.extent_path_m")
+
+    target = observation.get("target") or {}
     if (
-        converted.get("schema_version") == 3
-        and "campaign" in converted
-        and "schedule" in converted
-        and "observation" not in converted
+        isinstance(target, dict)
+        and str(target.get("state", "static")).lower() in {"static", "linear"}
+        and "id" in target
     ):
-        return _canonical_campaign_to_pipeline(converted)
-    if "observation" in converted or "echo" in converted:
-        return normalize_parameter_ownership(converted)
-    return converted
+        raise ValueError("target.id 仅 Horizons 目标需要；static/linear 目标不要提供 id")
+
+    for role in ("transmitter", "receiver"):
+        station = observation.get(role)
+        if isinstance(station, dict):
+            for key in ("id", "same_as"):
+                if key in station:
+                    raise ValueError(f"{role}.{key} 已废弃；单站请省略 receiver，双站请提供完整站状态")
+
+    receive = observation.get("receive") or {}
+    if isinstance(receive, dict) and "acquisitions" in receive:
+        raise ValueError("receive.acquisitions 已废弃；脉冲序列请使用 schedule + waveform + radar_system + receiver_sampling")
+
+    ephemeris = observation.get("ephemeris") or {}
+    if isinstance(ephemeris, dict):
+        for key in ("padding_s", "query_mode", "query_chunk_size", "min_query_chunk_size", "query_retries", "cache"):
+            if key in ephemeris:
+                raise ValueError(f"ephemeris.{key} 已废弃；Horizons 传输/重试策略由环境默认决定")
+
+    if "cpi_pulses" in inversion:
+        raise ValueError("inversion.cpi_pulses 已废弃；请使用 inversion.cpi_duration_s")
+    if "cpi_hop_pulses" in inversion:
+        raise ValueError("inversion.cpi_hop_pulses 已废弃；请使用 inversion.cpi_hop_duration_s")
+    if "cross_run_phase_coherent" in inversion:
+        raise ValueError("inversion.cross_run_phase_coherent 已废弃；该字段从未实现")
 
 
-def _station_config(value, *, fallback_name):
-    value = copy.deepcopy(value or {})
-    value.setdefault("name", value.get("id", fallback_name))
-    if "longitude_deg" in value:
-        value["lon_deg"] = value.pop("longitude_deg")
-    if "latitude_deg" in value:
-        value["lat_deg"] = value.pop("latitude_deg")
-    if "altitude_m" in value:
-        value["height_m"] = value.pop("altitude_m")
-    if "state" not in value:
-        if {"lon_deg", "lat_deg", "height_m"}.issubset(value):
-            value["state"] = "astropy_geodetic"
-        elif "position_m" in value:
-            value["state"] = "static"
-    return value
+def normalize_config(config):
+    """Normalize a schema-v4 stage config into clean observation/echo/inversion."""
 
+    config = copy.deepcopy(config)
+    if not isinstance(config, dict):
+        raise ValueError("pipeline 配置必须是 JSON 对象")
+    required = {"observation", "echo", "inversion"}
+    missing = sorted(required - set(config))
+    unknown = sorted(set(config) - required)
+    if unknown:
+        raise ValueError(
+            "未知 pipeline 顶层字段：" + ", ".join(unknown)
+        )
+    if missing:
+        raise ValueError(f"pipeline 配置缺少顶层段：{', '.join(missing)}")
+    _reject_deprecated_pipeline_keys(config)
+    observation = config.setdefault("observation", {})
+    echo = config.setdefault("echo", {})
+    inversion = config.setdefault("inversion", {})
 
-def _canonical_campaign_to_pipeline(config):
-    """Adapt the schema-v3 campaign document to the existing three executables."""
-
-    campaign = copy.deepcopy(config["campaign"])
-    sites = copy.deepcopy(config.get("sites", {}))
-    transmitter = _station_config(sites.get("transmitter"), fallback_name="TX")
-    receiver_raw = sites.get("receiver", {})
-    if receiver_raw.get("same_as") in {transmitter.get("id"), "transmitter"}:
-        receiver = copy.deepcopy(transmitter)
-        receiver["name"] = receiver_raw.get("name", transmitter.get("name", "RX"))
-    else:
-        receiver = _station_config(receiver_raw, fallback_name="RX")
-    target = copy.deepcopy(config.get("target", campaign.get("target", {})))
-    if not target:
-        target = {
-            "id": str(campaign["target_id"]),
-            "name": str(campaign.get("target_name", campaign["target_id"])),
-            "state": "horizons_vectors",
-            "object_type": campaign.get("target_object_type", "smallbody"),
-        }
-    waveform = copy.deepcopy(config["waveform"])
-    if waveform.get("type") == "lfm_chirp":
-        waveform["type"] = "chirp_pulse_train"
-    receiver_sampling = copy.deepcopy(config.get("receiver", {}))
-    if "fs_hz" in receiver_sampling and "fast_sample_rate_hz" not in receiver_sampling:
-        receiver_sampling["fast_sample_rate_hz"] = receiver_sampling.pop("fs_hz")
-    transmit_timing = {
-        key: waveform[key] for key in OBSERVATION_WAVEFORM_KEYS if key in waveform
-    }
-    rf_waveform = {key: waveform[key] for key in ECHO_WAVEFORM_KEYS if key in waveform}
-    observation = {
-        "campaign": campaign,
-        "target": target,
-        "transmitter": transmitter,
-        "receiver": receiver,
-        "visibility": copy.deepcopy(config.get("visibility", {})),
-        "radar_system": copy.deepcopy(config["radar_system"]),
-        "waveform": transmit_timing,
-        "receiver_sampling": receiver_sampling,
-        "schedule": copy.deepcopy(config["schedule"]),
-        "ephemeris": copy.deepcopy(config.get("ephemeris", {})),
-        "solver": copy.deepcopy(config.get("solver", {"tolerance_s": 1e-9, "max_iter": 32})),
-    }
-    echo_model = copy.deepcopy(config.get("echo_model", {}))
-    echo_config = copy.deepcopy(DEFAULT_CONFIG["echo"])
-    for key, value in echo_model.items():
-        if isinstance(value, dict) and isinstance(echo_config.get(key), dict):
-            echo_config[key].update(value)
-        else:
-            echo_config[key] = value
-    echo_config["echo_output_reference"] = echo_model.get(
-        "echo_output_reference", "centroid_compensated"
+    waveform_type = str(
+        (observation.get("waveform") or {}).get("type")
+        or (echo.get("waveform") or {}).get("type")
+        or "continuous_wave"
     )
-    echo_config.setdefault("intrapulse_motion_model", "per_pulse_linear")
-    echo_config["waveform"] = rf_waveform
-    if "carrier_frequency_hz" in waveform:
-        echo_config["radar"] = {
-            "carrier_frequency_hz": float(waveform["carrier_frequency_hz"])
-        }
-    processing = config.get("processing", {})
-    estimator = config.get("period_estimation", {})
-    inversion_config = copy.deepcopy(DEFAULT_CONFIG["inversion"])
-    inversion_config.update(
-        {
-            "period_min_s": estimator.get("minimum_period_s", inversion_config["period_min_s"]),
-            "period_max_s": estimator.get("maximum_period_s", inversion_config["period_max_s"]),
-            "period_grid_size": estimator.get("period_grid_size", inversion_config["period_grid_size"]),
-            "harmonics": estimator.get("harmonics", 1),
-            "cross_run_phase_coherent": estimator.get("cross_run_phase_coherent", False),
-            "cpi_pulses": processing.get("cpi_pulses", 128),
-            "cpi_hop_pulses": processing.get("cpi_hop_pulses", 32),
-            "motion_compensation": processing.get("motion_compensation", "centroid_geometry"),
-            "period_time_role": processing.get("period_time_role", "scatter_centroid"),
-        }
-    )
-    return normalize_parameter_ownership(
-        {
-            "schema_version": 3,
-            "campaign": campaign,
-            "observation": observation,
-            "echo": echo_config,
-            "inversion": inversion_config,
-        }
-    )
+
+    # Identical TX/RX geometry → monostatic omit receiver.
+    transmitter = observation.get("transmitter")
+    receiver = observation.get("receiver")
+    if isinstance(transmitter, dict) and isinstance(receiver, dict):
+        left = {k: v for k, v in transmitter.items() if k not in {"id", "name", "same_as"}}
+        right = {k: v for k, v in receiver.items() if k not in {"id", "name", "same_as"}}
+        if left == right:
+            observation.pop("receiver", None)
+
+    config["observation"] = observation
+    config["echo"] = echo
+    config["inversion"] = inversion
+
+    # Validate at the interfaces owned by each submodule.  The pipeline does
+    # not maintain a second, drifting copy of their field lists.
+    from observation.src.config_normalize import validate_observation_config
+    from echo.src.config_normalize import normalize_echo_config
+    from inversion.src.dataset import normalize_inversion_policy
+
+    validate_observation_config(config["observation"])
+    config["echo"] = normalize_echo_config(config["echo"])
+    config = normalize_parameter_ownership(config)
+    layout = "chirp" if waveform_type == "chirp_pulse_train" else "cw"
+    config["inversion"] = normalize_inversion_policy(config["inversion"], layout)
+    return config
 
 
 def normalize_parameter_ownership(config):
-    """Ensure observation/echo do not dual-own the same editable radar fields."""
+    """Reject fields placed in the wrong stage (strict v4 ownership).
+
+    ``type`` is the sole shared waveform discriminator and may appear on either
+    side.  Every other editable field has exactly one owner, so writing it on
+    the wrong side is an error rather than something to silently migrate.
+    """
 
     config = copy.deepcopy(config)
     observation = config.setdefault("observation", {})
@@ -530,28 +289,39 @@ def normalize_parameter_ownership(config):
     echo_waveform = dict(echo.get("waveform", {}))
     echo_radar = dict(echo.get("radar", {}))
 
-    for waveform in (obs_waveform, echo_waveform):
-        if waveform.get("type") == "lfm_chirp":
-            waveform["type"] = "chirp_pulse_train"
-
+    # type is shared; require consistency when present on both sides.
+    if "type" in obs_waveform and "type" in echo_waveform:
+        if obs_waveform["type"] != echo_waveform["type"]:
+            raise ValueError(
+                f"waveform.type 在 observation 与 echo 中不一致："
+                f"{obs_waveform['type']!r} 与 {echo_waveform['type']!r}"
+            )
+    for key in ("prf_hz", "pulse_width_s"):
+        if key in echo_waveform:
+            raise ValueError(f"waveform.{key} 应由 observation.waveform 持有，请从 echo.waveform 移除")
+    if "fast_sample_rate_hz" in echo_waveform:
+        raise ValueError(
+            "waveform.fast_sample_rate_hz 应由 observation.receiver_sampling 持有，"
+            "请从 echo.waveform 移除"
+        )
     for key in ("bandwidth_hz", "amplitude", "baseband_convention"):
         if key in obs_waveform:
-            echo_waveform.setdefault(key, obs_waveform.pop(key))
+            raise ValueError(f"waveform.{key} 应由 echo.waveform 持有，请从 observation.waveform 移除")
     if "carrier_frequency_hz" in obs_waveform:
-        echo_radar.setdefault("carrier_frequency_hz", obs_waveform.pop("carrier_frequency_hz"))
+        raise ValueError("carrier_frequency_hz 应由 echo.radar 持有，请从 observation.waveform 移除")
+
+    # type may live on either side; mirror it so both stages agree.
     if "type" in obs_waveform:
         echo_waveform["type"] = obs_waveform["type"]
-    elif "type" in echo_waveform and "type" not in obs_waveform:
+    elif "type" in echo_waveform:
         obs_waveform["type"] = echo_waveform["type"]
 
-    # Observation keeps only transmit-timing waveform fields.
     observation["waveform"] = {
         key: obs_waveform[key] for key in OBSERVATION_WAVEFORM_KEYS if key in obs_waveform
     }
-    # Echo keeps only RF waveform fields; timing is injected later for the child process.
-    for key in ECHO_INJECTED_FROM_OBSERVATION + ("fast_sample_rate_hz", "carrier_frequency_hz"):
-        echo_waveform.pop(key, None)
-    echo["waveform"] = {key: echo_waveform[key] for key in ECHO_WAVEFORM_KEYS if key in echo_waveform}
+    echo["waveform"] = {
+        key: echo_waveform[key] for key in ECHO_WAVEFORM_KEYS if key in echo_waveform
+    }
     if echo_radar:
         echo["radar"] = echo_radar
     config["observation"] = observation
@@ -560,58 +330,20 @@ def normalize_parameter_ownership(config):
 
 
 def assemble_echo_waveform(observation_config, echo_config):
-    """Build the executable echo waveform from RF ownership + observation timing."""
+    """Validate the RF waveform against the observation-owned ADC rate."""
 
     observation_waveform = observation_config.get("waveform", {})
     receiver_sampling = observation_config.get("receiver_sampling", {})
     echo_waveform = copy.deepcopy(echo_config.get("waveform", {}))
-    for key in ECHO_INJECTED_FROM_OBSERVATION:
-        if key in observation_waveform:
-            echo_waveform[key] = observation_waveform[key]
     if "type" not in echo_waveform and "type" in observation_waveform:
         echo_waveform["type"] = observation_waveform["type"]
-    if "fast_sample_rate_hz" in receiver_sampling:
-        echo_waveform["fast_sample_rate_hz"] = float(receiver_sampling["fast_sample_rate_hz"])
     bandwidth = echo_waveform.get("bandwidth_hz")
-    sample_rate = echo_waveform.get("fast_sample_rate_hz")
+    sample_rate = receiver_sampling.get("fast_sample_rate_hz")
     if bandwidth is not None and sample_rate is not None and float(sample_rate) <= abs(float(bandwidth)):
-        raise ValueError("复基带 chirp 要求 receiver.fast_sample_rate_hz 大于 bandwidth_hz")
+        raise ValueError(
+            "复基带 chirp 要求 receiver_sampling.fast_sample_rate_hz 大于 bandwidth_hz"
+        )
     return echo_waveform
-
-
-def _collapse_scattering_power(config):
-    value = config.get("scattering_power")
-    if isinstance(value, dict):
-        incident = value.get("incident", value.get("发射照明方向", value.get("Incident Direction", 1.0)))
-        scattered = value.get("scattered", value.get("散射方向", value.get("Scattered Direction", 1.0)))
-        config["scattering_power"] = [incident, scattered]
-
-
-def gui_config_from_pipeline_config(config, language="zh"):
-    """Export a researcher-facing JSON using GUI labels while keeping values exact."""
-
-    labels = CANONICAL_TO_FRIENDLY_ZH if language == "zh" else CANONICAL_TO_FRIENDLY_EN
-    payload = {"GUI配置版本" if language == "zh" else "GUI Config Version": 1}
-    for key, value in config.items():
-        payload[labels.get(key, key)] = _friendly_value(value, labels)
-    return payload
-
-
-def _friendly_value(value, labels):
-    if isinstance(value, list):
-        return [_friendly_value(item, labels) for item in value]
-    if not isinstance(value, dict):
-        return value
-    converted = {}
-    for key, item in value.items():
-        if key == "scattering_power" and isinstance(item, list) and len(item) == 2:
-            converted[labels.get(key, key)] = {
-                labels.get("incident", "incident"): item[0],
-                labels.get("scattered", "scattered"): item[1],
-            }
-        else:
-            converted[labels.get(key, key)] = _friendly_value(item, labels)
-    return converted
 
 
 def run_step(name, command, cwd, env=None):
@@ -631,6 +363,7 @@ def child_env(extra_paths=None):
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
     inversion_src = (ROOT / "inversion" / "src").resolve()
     inherited = []
     for entry in env.get("PYTHONPATH", "").split(os.pathsep):
@@ -648,7 +381,7 @@ def child_env(extra_paths=None):
 
 
 def prepared_configs(config, run_dir):
-    config = normalize_parameter_ownership(pipeline_config_from_any(config))
+    config = canonical_pipeline_config(config)
     observation_output = run_dir / "observation_info.npz"
     echo_output_dir = run_dir / "echo"
     inversion_output_dir = run_dir / "inversion"
@@ -658,14 +391,12 @@ def prepared_configs(config, run_dir):
 
     echo_config = copy.deepcopy(config["echo"])
     echo_config["observation_info_path"] = str(observation_output)
+    echo_config["output_path"] = str(echo_output_dir)
     if "waveform" in observation_config or "waveform" in echo_config:
         echo_config["waveform"] = assemble_echo_waveform(observation_config, echo_config)
-    if "radar" not in echo_config and "carrier_frequency_hz" in observation_config.get("waveform", {}):
-        echo_config["radar"] = {
-            "carrier_frequency_hz": float(observation_config["waveform"]["carrier_frequency_hz"])
-        }
 
     inversion_config = copy.deepcopy(config["inversion"])
+    inversion_config["output_path"] = str(inversion_output_dir)
 
     return {
         "observation": observation_config,
@@ -679,10 +410,9 @@ def prepared_configs(config, run_dir):
 
 def main():
     args = parse_args()
-    config = normalize_parameter_ownership(
-        pipeline_config_from_any(load_json(args.config)) if args.config else copy.deepcopy(DEFAULT_CONFIG)
+    config = canonical_pipeline_config(
+        load_json(args.config) if args.config else copy.deepcopy(DEFAULT_CONFIG)
     )
-    require_sections(config)
 
     run_dir = run_directory(args)
     config_dir = run_dir / "configs"

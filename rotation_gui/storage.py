@@ -5,13 +5,12 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG_PATH = ROOT / "configs" / "campaign_v3_example.json"
+DEFAULT_CONFIG_PATH = ROOT / "configs" / "campaign_v4_example.json"
 STATE_DIR = ROOT / ".gui_state"
-STATE_PATH = STATE_DIR / "pipeline_gui_state.json"
-HISTORY_PATH = STATE_DIR / "history.json"
 PREVIEW_DIR = STATE_DIR / "previews"
 
 def read_json(path: Path, fallback):
@@ -36,6 +35,16 @@ def parse_value(raw: str):
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        # Vector components are entered in individual editors.  Accept the
+        # conventional thousands separators users naturally type there while
+        # retaining JSON parsing for lists, objects, booleans, and null above.
+        grouped_number = re.fullmatch(
+            r"[+-]?(?:\d{1,3}(?:,\d{3})+)(?:\.\d+)?(?:[eE][+-]?\d+)?",
+            text,
+        )
+        if grouped_number:
+            normalized = text.replace(",", "")
+            return float(normalized) if any(char in normalized for char in ".eE") else int(normalized)
         return raw
 
 def format_value(value) -> str:
