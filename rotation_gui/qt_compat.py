@@ -31,14 +31,13 @@ def _prepare_qt_plugin_path() -> None:
 
 
 _prepare_qt_plugin_path()
-QT_WEBENGINE_AVAILABLE = False
 
 
 def _load_qt_binding():
     preferred = os.environ.get("ROTATION_GUI_QT_BINDING", "PySide6").strip().lower()
     if preferred != "pyqt6":
-        from PySide6.QtCore import QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl
-        from PySide6.QtGui import QDesktopServices, QIcon
+        from PySide6.QtCore import QEvent, QPointF, QProcess, QProcessEnvironment, QRectF, QSize, Qt, QTimer, QUrl
+        from PySide6.QtGui import QColor, QBrush, QDesktopServices, QFont, QIcon, QPainter, QPen, QPolygonF
         from PySide6.QtWidgets import (
             QApplication,
             QCheckBox,
@@ -64,8 +63,8 @@ def _load_qt_binding():
         )
         return locals(), "PySide6"
 
-    from PyQt6.QtCore import QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl
-    from PyQt6.QtGui import QDesktopServices, QIcon
+    from PyQt6.QtCore import QEvent, QPointF, QProcess, QProcessEnvironment, QRectF, QSize, Qt, QTimer, QUrl
+    from PyQt6.QtGui import QColor, QBrush, QDesktopServices, QFont, QIcon, QPainter, QPen, QPolygonF
     from PyQt6.QtWidgets import (
         QApplication,
             QCheckBox,
@@ -94,16 +93,9 @@ def _load_qt_binding():
 
 _qt, QT_BINDING = _load_qt_binding()
 globals().update(_qt)
-QWebEngineView = None
 
-
-ALIGN_CENTER = Qt.AlignmentFlag.AlignCenter
 HORIZONTAL = Qt.Orientation.Horizontal
 VERTICAL = Qt.Orientation.Vertical
-KEEP_ASPECT = Qt.AspectRatioMode.KeepAspectRatio
-SMOOTH_TRANSFORM = Qt.TransformationMode.SmoothTransformation
 EXPANDING = QSizePolicy.Policy.Expanding
 FIXED = QSizePolicy.Policy.Fixed
-PREFERRED = QSizePolicy.Policy.Preferred
-STYLED_PANEL = QFrame.Shape.StyledPanel
 NOT_RUNNING = QProcess.ProcessState.NotRunning

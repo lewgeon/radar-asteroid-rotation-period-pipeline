@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <defs>
+    <style>
+      text { font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #243447; }
+      .title { font-size: 24px; font-weight: 700; }
+      .case { font-size: 18px; font-weight: 600; }
+      .note { font-size: 14px; fill: #53657a; }
+      .axis { stroke: #53657a; stroke-width: 2; }
+      .tick { stroke: #53657a; stroke-width: 1.5; }
+      .visible { stroke: #55b86a; stroke-width: 12; stroke-linecap: butt; }
+      .hidden { stroke: #dc6b68; stroke-width: 12; stroke-linecap: butt; }
+      .run { fill: url(#runPattern); stroke: #145da0; stroke-width: 1; }
+      .reserve { fill: #c9ddf5; stroke: #72a7df; stroke-width: 1; stroke-dasharray: 5 4; }
+      .bracket { stroke: #53657a; stroke-width: 1.5; fill: none; }
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#53657a"/></marker>
+    <pattern id="runPattern" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#dbeafa"/><rect width="5" height="12" fill="#2878d0"/></pattern>
+  </defs>
+  <rect width="1200" height="900" fill="#ffffff"/>
+  <text x="40" y="42" class="title">自动发射选时示意图</text>
+  <rect x="690" y="20" width="24" height="10" fill="#55b86a"/><text x="722" y="31" class="note">可见时段</text>
+  <rect x="815" y="20" width="24" height="10" fill="#dc6b68"/><text x="847" y="31" class="note">不可见时段</text>
+  <rect x="930" y="17" width="34" height="16" class="run"/><text x="972" y="31" class="note">Run 内脉冲发射</text>
+
+  <text x="40" y="86" class="case">一次单站 Run：调度预留与实际接收的关系</text>
+  <rect x="300" y="62" width="105" height="28" class="run"/>
+  <rect x="405" y="62" width="430" height="28" class="reserve"/>
+  <rect x="650" y="67" width="150" height="18" fill="#8f6fc1" opacity="0.88"/>
+  <text x="300" y="56" class="note">Run 调度时长 D（条纹表示脉冲）</text><text x="475" y="56" class="note">调度预留尾部 H-D（示意，不按比例）</text>
+  <text x="664" y="112" class="note">实际 ADC 窗：完成光行时求解后确定</text>
+  <path d="M300 122 L300 132 L835 132 L835 122" class="bracket"/><text x="518" y="152" class="note">单次 Run 调度预留长度 H</text>
+
+  <text x="40" y="202" class="case">A　包含非可见时段，1 次 Run</text>
+  <line x1="300" y1="210" x2="1120" y2="210" class="visible"/><line x1="300" y1="210" x2="1120" y2="210" class="axis"/>
+  <rect x="570" y="186" width="55" height="24" class="run"/><rect x="625" y="186" width="220" height="24" class="reserve"/>
+  <text x="300" y="236" class="note">T₀</text><text x="1100" y="236" class="note">T₁</text><text x="535" y="260" class="note">调度预留区间的起点位于可行起点范围中点</text>
+
+  <text x="40" y="310" class="case">B　包含非可见时段，2 次 Run</text>
+  <line x1="300" y1="318" x2="1120" y2="318" class="visible"/><line x1="300" y1="318" x2="1120" y2="318" class="axis"/>
+  <rect x="300" y="294" width="45" height="24" class="run"/><rect x="345" y="294" width="170" height="24" class="reserve"/>
+  <rect x="905" y="294" width="45" height="24" class="run"/><rect x="950" y="294" width="170" height="24" class="reserve"/>
+  <text x="300" y="344" class="note">T₀</text><text x="1100" y="344" class="note">T₁</text><text x="704" y="368" class="note">第二个完整预留区间结束于 T₁，回波仍然接收</text>
+
+  <text x="40" y="418" class="case">C　包含非可见时段，多次 Run</text>
+  <line x1="300" y1="426" x2="1120" y2="426" class="visible"/><line x1="300" y1="426" x2="1120" y2="426" class="axis"/>
+  <g><rect x="300" y="402" width="32" height="24" class="run"/><rect x="332" y="402" width="105" height="24" class="reserve"/><rect x="528" y="402" width="32" height="24" class="run"/><rect x="560" y="402" width="105" height="24" class="reserve"/><rect x="756" y="402" width="32" height="24" class="run"/><rect x="788" y="402" width="105" height="24" class="reserve"/><rect x="983" y="402" width="32" height="24" class="run"/><rect x="1015" y="402" width="105" height="24" class="reserve"/></g>
+  <text x="430" y="458" class="note">非随机模式：完整预留区间的起点在可行起点长度上等距</text>
+
+  <text x="40" y="526" class="case">D　不包含非可见时段，多个可见窗</text>
+  <line x1="300" y1="534" x2="450" y2="534" class="hidden"/><line x1="450" y1="534" x2="700" y2="534" class="visible"/><line x1="700" y1="534" x2="820" y2="534" class="hidden"/><line x1="820" y1="534" x2="1120" y2="534" class="visible"/><line x1="300" y1="534" x2="1120" y2="534" class="axis"/>
+  <rect x="450" y="510" width="28" height="24" class="run"/><rect x="478" y="510" width="82" height="24" class="reserve"/><rect x="590" y="510" width="28" height="24" class="run"/><rect x="618" y="510" width="82" height="24" class="reserve"/><rect x="820" y="510" width="28" height="24" class="run"/><rect x="848" y="510" width="82" height="24" class="reserve"/><rect x="1010" y="510" width="28" height="24" class="run"/><rect x="1038" y="510" width="82" height="24" class="reserve"/>
+  <text x="380" y="566" class="note">只有完整的蓝色加浅蓝区间能够落在绿色时段内，其起点才可用</text>
+
+  <text x="40" y="634" class="case">E　不包含非可见时段，随机选取</text>
+  <line x1="300" y1="642" x2="450" y2="642" class="hidden"/><line x1="450" y1="642" x2="700" y2="642" class="visible"/><line x1="700" y1="642" x2="820" y2="642" class="hidden"/><line x1="820" y1="642" x2="1120" y2="642" class="visible"/><line x1="300" y1="642" x2="1120" y2="642" class="axis"/>
+  <rect x="485" y="618" width="28" height="24" class="run"/><rect x="513" y="618" width="82" height="24" class="reserve"/><rect x="842" y="618" width="28" height="24" class="run"/><rect x="870" y="618" width="82" height="24" class="reserve"/><rect x="995" y="618" width="28" height="24" class="run"/><rect x="1023" y="618" width="82" height="24" class="reserve"/>
+  <text x="410" y="674" class="note">随机种子决定可复现的位置；最后一个 Run 同样保留完整尾部并接收回波</text>
+
+  <rect x="40" y="730" width="1120" height="118" rx="8" fill="#f4f7fb" stroke="#d5dfeb"/>
+  <text x="62" y="762" class="note">蓝色条纹块长度 D：允许安排完整脉冲的 Run 调度时长，并不表示连续发射。蓝色加浅蓝长度 H：完整调度预留区间。</text>
+  <text x="62" y="790" class="note">浅蓝部分包含传播等待、收发切换和完整接收所需的保守余量，但这些过程可以重叠，它不是精确设备状态时间线。</text>
+  <text x="62" y="818" class="note">每个 Run 都会接收回波；紫色 ADC 窗只有在逐脉冲光行时求解以后才能定位。</text>
+</svg>

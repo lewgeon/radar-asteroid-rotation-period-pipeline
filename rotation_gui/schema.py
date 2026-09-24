@@ -20,6 +20,7 @@ GROUP_LABELS = {
     "scattering_spot": "散射特性",
     "noise": "噪声",
     "radar": "雷达参数",
+    "transmit": "发射时序",
     "waveform": "发射时序",
     "campaign": "观测活动",
     "visibility": "可见性约束",
@@ -36,12 +37,6 @@ GROUP_LABELS = {
     "echo_options": "回波输出",
     "通用参数": "通用参数",
     "general": "通用参数",
-}
-
-STAGE_GROUP_ORDER = {
-    "observation": ("通用参数", "target", "transmitter", "receiver", "receive", "ephemeris"),
-    "echo": ("通用参数", "compute", "target", "scattering_spot", "radar", "waveform"),
-    "inversion": ("通用参数",),
 }
 
 CHOICES = {
@@ -92,7 +87,8 @@ OPTION_LABELS = {
     "horizons_vectors": "Horizons 星历",
     "monostatic_switching": "单站收发切换",
     "bistatic_continuous": "双站连续",
-    "manual": "手动指定",
+    "manual": "手动选择",
+    "automatic": "自动选取",
     "equal_visible_time": "可见时段等间隔",
     "random_visible_time": "可见时段随机",
     "centroid_compensated": "质心补偿基带",
@@ -109,7 +105,7 @@ OPTION_LABELS = {
     "emit": "发射时标",
     "leading_edge": "前沿",
     "zero_to_bandwidth": "零到带宽",
-    "centered": "对称基带",
+    "centered": "对称带宽",
 }
 
 HORIZONS_ID_TYPE_ALIASES = {
@@ -138,16 +134,12 @@ STATE_DEFAULTS = {
     "lat_deg": 0.0,
     "lon_deg": 0.0,
     "height_m": 0.0,
-    "object_type": None,
+    "object_type": "smallbody",
 }
 
 EPHEMERIS_FIELD_DEFAULTS = {
     "query_step_s": 60.0,
 }
-
-EPHEMERIS_FIELD_ORDER = (
-    "query_step_s",
-)
 
 COMMON_FIELD_ORDER = ("id", "name", "state")
 
@@ -156,6 +148,8 @@ PROGRESS_PREFIX = "__PROGRESS__ "
 WARNING_PREFIX = "__WARNING__ "
 
 ERROR_PREFIX = "__ERROR__ "
+
+SUMMARY_PREFIX = "__SUMMARY__ "
 
 FIELD_LABELS = {
     "id": "ID",
@@ -170,14 +164,17 @@ FIELD_LABELS = {
     "geodetic_time_dependent": "随地球自转更新位置",
     "linear_motion": "进行匀速直线运动",
     "object_type": "目标类型",
-    "start_utc": "开始时间",
+    "start_utc": "接收开始时间",
     "duration_s": "接收时长",
     "sample_rate_hz": "采样率",
     "query_step_s": "星历步长",
     "model_path": "形状模型",
     "scattering_model": "散射模型",
     "seed": "噪声种子",
-    "chunk_size": "计算分块",
+    "chunk_size": "CW 时间分块",
+    "facet_chunk_size": "面元计算块",
+    "fast_sample_chunk_size": "样点计算块",
+    "pulse_batch_size": "脉冲计算批次",
     "device": "计算设备",
     "dtype": "浮点精度",
     "rotation_period_s": "自转周期",
@@ -206,8 +203,7 @@ FIELD_LABELS = {
     "target_id": "目标 ID",
     "query_start_utc": "查询开始",
     "query_end_utc": "查询结束",
-    "start_utc": "窗口开始",
-    "end_utc": "窗口结束",
+    "end_utc": "发射选时范围结束",
     "min_tx_elevation_deg": "发射最低仰角",
     "min_rx_elevation_deg": "接收最低仰角",
     "sample_step_s": "可见性采样步长",
@@ -216,14 +212,14 @@ FIELD_LABELS = {
     "safety_margin_s": "切换安全余量",
     "prf_hz": "脉冲重复频率",
     "baseband_convention": "基带约定",
-    "pre_guard_s": "ADC 前置保护",
-    "post_guard_s": "ADC 后置保护",
-    "extent_path_m": "体尺度路径展宽",
+    "extent_path_m": "采集路径窗",
     "amplitude_scale": "点目标幅度",
     "selection": "选时方式",
     "run_count": "Run 数量",
     "run_duration_s": "单次 Run 时长",
     "random_seed": "随机种子",
+    "random_selection": "随机选取",
+    "allow_unobservable_for_simulation": "包含非可见时段",
     "runs": "Run 时刻表",
     "echo_output_reference": "回波参考系",
     "intrapulse_motion_model": "脉内运动模型",
@@ -232,6 +228,14 @@ FIELD_LABELS = {
     "harmonics": "谐波数",
     "cpi_duration_s": "CPI 时长",
     "cpi_hop_duration_s": "CPI 步进时长",
+}
+
+FIELD_TOOLTIPS = {
+    "chunk_size": "连续波网格回波每次送入计算的时间样点数。只影响速度和显存，不改变物理模型。",
+    "facet_chunk_size": "网格 Chirp 每次送入计算的面元数。只影响速度和显存，不改变物理模型；留空则按面元总数与 1280 中的较小值解析。",
+    "fast_sample_chunk_size": "网格 Chirp 每次送入计算的脉冲–采样点对数。只影响速度和显存，不改变物理模型；留空则按一块约 200 万个面元—样点自动解析。",
+    "pulse_batch_size": "网格 Chirp 每次一起计算的脉冲数，默认 32。只影响计算分组，不改变物理模型；点目标路径不使用该字段。",
+    "extent_path_m": "相对质心参考回波，两侧各允许的最大额外双程路径。未知尺度、星历误差和希望多留的余量都写在这一个数里。时延等于该长度除以光速。",
 }
 
 FIELD_UNITS = {
@@ -243,6 +247,7 @@ FIELD_UNITS = {
     "height_m": "m",
     "duration_s": "s",
     "sample_rate_hz": "Hz",
+    "sample_step_s": "s",
     "query_step_s": "s",
     "rotation_period_s": "s",
     "initial_phase_deg": "°",
@@ -259,8 +264,7 @@ FIELD_UNITS = {
     "switch_time_s": "s",
     "safety_margin_s": "s",
     "prf_hz": "Hz",
-    "pre_guard_s": "s",
-    "post_guard_s": "s",
+    "extent_path_m": "m",
     "run_duration_s": "s",
     "cpi_duration_s": "s",
     "cpi_hop_duration_s": "s",
@@ -271,13 +275,15 @@ FIELD_UNITS = {
 UNIT_CHOICES = {
     "duration_s": (("h", 3600.0), ("min", 60.0), ("s", 1.0)),
     "rotation_period_s": (("h", 3600.0), ("s", 1.0)),
-    "initial_phase_deg": (("π rad", 180.0), ("°", 1.0)),
+    "initial_phase_deg": (("π", 180.0), ("°", 1.0)),
     "period_min_s": (("h", 3600.0), ("s", 1.0)),
     "period_max_s": (("h", 3600.0), ("s", 1.0)),
     "carrier_frequency_hz": (("GHz", 1.0e9), ("MHz", 1.0e6), ("Hz", 1.0)),
     "bandwidth_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
     "sample_rate_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
     "fast_sample_rate_hz": (("MHz", 1.0e6), ("kHz", 1.0e3), ("Hz", 1.0)),
+    "extent_path_m": (("km", 1000.0), ("m", 1.0)),
+    "pulse_width_s": (("s", 1.0), ("ms", 1.0e-3), ("µs", 1.0e-6)),
 }
 
 # Numeric editors share one validation path.  Keep this list keyed by the
@@ -293,6 +299,7 @@ NUMERIC_FIELD_KEYS = frozenset(
         "chunk_size",
         "facet_chunk_size",
         "fast_sample_chunk_size",
+        "pulse_batch_size",
         "frozen_max_carrier_phase_error_rad",
         "frozen_max_range_walk_samples",
         "frozen_max_rotation_error_deg",
@@ -312,6 +319,7 @@ INTEGER_FIELD_KEYS = frozenset(
         "chunk_size",
         "facet_chunk_size",
         "fast_sample_chunk_size",
+        "pulse_batch_size",
         "stft_window_samples",
         "period_grid_size",
         "harmonics",
@@ -322,9 +330,9 @@ INTEGER_FIELD_KEYS = frozenset(
 
 CONTROL_HEIGHT = 32
 
-EDITABLE_UNIT_WIDTH = 76
+EDITABLE_UNIT_WIDTH = 64
 
-FIXED_UNIT_WIDTH = 44
+FIXED_UNIT_WIDTH = 32
 
 SCATTERING_SPOT_DEFAULTS = {
     "enabled": True,

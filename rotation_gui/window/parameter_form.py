@@ -4,16 +4,27 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 
 from ..qt_compat import (
+    QColor,
     EXPANDING,
     FIXED,
+    QBrush,
     QCheckBox,
     QComboBox,
     QFrame,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QFont,
+    QPainter,
+    QPen,
+    QPointF,
+    QPolygonF,
+    QRectF,
+    QPushButton,
     QScrollArea,
     QTextEdit,
     QTimer,
@@ -27,6 +38,7 @@ from ..schema import (
     CONTROL_HEIGHT,
     EPHEMERIS_FIELD_DEFAULTS,
     FIELD_LABELS,
+    FIELD_TOOLTIPS,
     FIELD_UNITS,
     GROUP_LABELS,
     HORIZONS_ID_TYPE_ALIASES,
@@ -55,6 +67,7 @@ from ..widgets import (
     UnitValueWidget,
     VectorValueWidget,
 )
+from ..widgets.inputs import NumericInputError
 
 SECTION_META = {
     "observation": ("观测解算", "目标、测站、发射时序、接收采样与 run 计划"),
@@ -91,13 +104,12 @@ ECHO_FIELD_ORDER = (
 # Echo RF fields that only apply to chirp pulse trains.
 ECHO_CHIRP_ONLY_FIELDS = {"waveform.bandwidth_hz", "waveform.baseband_convention"}
 
-OBSERVATION_WAVEFORM_DEFAULTS = {
-    "continuous_wave": {},
-    "chirp_pulse_train": {
-        "prf_hz": 4.0,
-        "pulse_width_s": 0.001,
-    },
+OBSERVATION_TRANSMIT_DEFAULTS = {
+    "prf_hz": 4.0,
+    "pulse_width_s": 0.001,
 }
+
+WAVEFORM_TYPES = ("continuous_wave", "chirp_pulse_train")
 
 ECHO_WAVEFORM_DEFAULTS = {
     "continuous_wave": {
@@ -106,7 +118,7 @@ ECHO_WAVEFORM_DEFAULTS = {
     "chirp_pulse_train": {
         "bandwidth_hz": 1.0e5,
         "amplitude": 1.0,
-        "baseband_convention": "zero_to_bandwidth",
+        "baseband_convention": "centered",
     },
 }
 
@@ -139,7 +151,7 @@ CARD_ORDER = {
         "transmitter",
         "receiver",
         "radar_system",
-        "waveform",
+        "transmit",
         "receive",
         "receiver_sampling",
         "plan",
@@ -159,6 +171,299 @@ CARD_ORDER = {
 _ALL_STATE_FIELD_KEYS = {key for fields in STATE_FIELDS.values() for key in fields} - {"id"}
 
 
+def _reject_observation_waveform(observation) -> None:
+    if isinstance(observation, dict) and "waveform" in observation:
+        from observation.src.config_normalize import OBSERVATION_WAVEFORM_DEPRECATED
+
+        raise ValueError(OBSERVATION_WAVEFORM_DEPRECATED)
+
+
+class ScheduleTimelineWidget(QWidget):
+    """Three-track campaign preview drawn at native widget resolution."""
+
+    _COLORS = {
+        "axis": QColor("#7b8794"),
+        "empty": QColor("#e6ebf0"),
+        "visible": QColor("#3f9a69"),
+        "hidden": QColor("#cf6767"),
+        "unknown": QColor("#aeb7c2"),
+        "run": QColor("#2f67a2"),
+        "reserve": QColor("#b9d3ed"),
+        "adc": QColor("#8060a8"),
+        "text": QColor("#526273"),
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._payload: dict = {}
+        self.setObjectName("scheduleTimeline")
+        self.setMinimumHeight(112)
+        self.setSizePolicy(EXPANDING, FIXED)
+
+    def clear(self) -> None:
+        self._payload = {}
+        self.update()
+
+    def set_plan(self, payload: dict) -> None:
+        self._payload = copy.deepcopy(payload)
+        self.update()
+
+    @staticmethod
+    def _intervals(payload: dict, key: str) -> list[tuple[float, float]]:
+        result = []
+        for item in payload.get(key) or []:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                result.append((float(item[0]), float(item[1])))
+        return result
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setFont(QFont("Microsoft YaHei", 9))
+        duration = float(self._payload.get("campaign_duration_s") or 0.0)
+        left = 66.0
+        right = max(left + 10.0, float(self.width()) - 18.0)
+        axis_right = right - 7.0
+        width = axis_right - left
+        rows = (("可见性", 24.0), ("Run", 57.0), ("ADC 估计", 90.0))
+
+        painter.setPen(self._COLORS["text"])
+        for label, y in rows:
+            painter.drawText(QRectF(7.0, y - 10.0, 56.0, 20.0), int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), label)
+            painter.setPen(QPen(self._COLORS["empty"], 2.0))
+            painter.drawLine(QPointF(left, y), QPointF(axis_right, y))
+            painter.setPen(self._COLORS["text"])
+        if duration <= 0.0:
+            painter.end()
+            return
+
+        def x_at(value: float) -> float:
+            return left + width * min(1.0, max(0.0, value / duration))
+
+        def fill_intervals(intervals, y, color, height=10.0, minimum_width=0.0):
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(color))
+            for start, stop in intervals:
+                x0 = x_at(start)
+                x1 = x_at(stop)
+                if stop > start and x1 - x0 < minimum_width:
+                    x1 = min(axis_right, x0 + minimum_width)
+                if x1 > x0:
+                    painter.drawRoundedRect(QRectF(x0, y - height / 2.0, x1 - x0, height), 1.5, 1.5)
+
+        visibility_y = rows[0][1]
+        visibility_applicable = bool(self._payload.get("visibility_applicable", True))
+        if visibility_applicable and not bool(self._payload.get("visibility_computed", True)):
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(self._COLORS["unknown"], Qt.BrushStyle.BDiagPattern))
+            painter.drawRect(QRectF(left, visibility_y - 5.0, width, 10.0))
+        else:
+            fill_intervals([(0.0, duration)], visibility_y, self._COLORS["hidden"])
+            fill_intervals(
+                self._intervals(self._payload, "visibility_windows_elapsed_s"),
+                visibility_y,
+                self._COLORS["visible"],
+            )
+
+        selected = self._intervals(self._payload, "run_intervals_elapsed_s")
+        reservations = self._intervals(self._payload, "reservation_intervals_elapsed_s")
+        run_y = rows[1][1]
+        painter.setPen(Qt.PenStyle.NoPen)
+        for tx, reserve in zip(selected, reservations):
+            x0 = x_at(reserve[0])
+            tx_end = x_at(tx[1])
+            reserve_end = x_at(reserve[1])
+            # Keep both layers legible when their true widths are below one display pixel.
+            reserve_end = min(axis_right, max(reserve_end, tx_end + 4.0, x0 + 8.0))
+            painter.setBrush(QBrush(self._COLORS["reserve"]))
+            painter.drawRoundedRect(QRectF(x0, run_y - 7.0, max(0.0, reserve_end - x0), 14.0), 1.5, 1.5)
+            tx_start = x_at(tx[0])
+            tx_end = min(axis_right, max(tx_end, tx_start + 4.0))
+            painter.setBrush(QBrush(self._COLORS["run"]))
+            painter.drawRoundedRect(QRectF(tx_start, run_y - 5.0, max(0.0, tx_end - tx_start), 10.0), 1.5, 1.5)
+
+        fill_intervals(
+            self._intervals(self._payload, "adc_preview_intervals_elapsed_s"),
+            rows[2][1],
+            self._COLORS["adc"],
+            height=8.0,
+            minimum_width=2.0,
+        )
+
+        painter.setPen(QPen(self._COLORS["axis"], 1.0))
+        painter.drawLine(QPointF(left, 10.0), QPointF(left, 101.0))
+        painter.drawText(QPointF(left - 5.0, 108.0), "T₀")
+        painter.drawText(QPointF(axis_right - 13.0, 108.0), "T₁")
+        arrow = QPolygonF(
+            [
+                QPointF(axis_right, visibility_y - 4.0),
+                QPointF(right, visibility_y),
+                QPointF(axis_right, visibility_y + 4.0),
+            ]
+        )
+        painter.setBrush(QBrush(self._COLORS["axis"]))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawPolygon(arrow)
+        painter.end()
+
+
+class ScheduleFeedbackWidget(QFrame):
+    """Compact capacity and timeline preview for automatic Run selection."""
+
+    def __init__(self, refresh_callback, parent=None):
+        super().__init__(parent)
+        self.setObjectName("scheduleFeedback")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 8)
+        layout.setSpacing(7)
+        header = QHBoxLayout()
+        self.summary = QLabel("正在计算观测计划…")
+        self.summary.setObjectName("scheduleFeedbackSummary")
+        self.summary.setWordWrap(True)
+        self.refresh_button = QPushButton("刷新预览")
+        self.refresh_button.setFixedHeight(28)
+        self.refresh_button.clicked.connect(refresh_callback)
+        header.addWidget(self.summary, 1)
+        header.addWidget(self.refresh_button)
+        layout.addLayout(header)
+        self.timeline = ScheduleTimelineWidget()
+        layout.addWidget(self.timeline)
+        self.detail = QLabel("绿色/红色：可见/不可见　深蓝：发射 Run　浅蓝：调度预留　紫色：ADC 估计窗")
+        self.detail.setObjectName("scheduleFeedbackDetail")
+        self.detail.setWordWrap(True)
+        layout.addWidget(self.detail)
+
+    def show_stale(self, message="参数已更新，请刷新预览") -> None:
+        self.summary.setText(message)
+        self._set_state("stale")
+
+    def show_pending(self, message="参数已更新，请刷新预览") -> None:
+        self.show_stale(message)
+
+    def show_error(self, message: str) -> None:
+        self.summary.setText(f"无法生成预览：{message}")
+        self._set_state("error")
+        self.timeline.clear()
+
+    def show_plan(self, payload: dict, requested_count: int) -> None:
+        maximum = payload.get("max_run_count")
+        occupied = payload.get("occupied_duration_s")
+        if maximum is None:
+            self.summary.setText("手动选时不计算自动 Run 数量上限")
+            self._set_state("neutral")
+        elif not bool(payload.get("run_feasible", True)):
+            self.summary.setText(
+                (payload.get("run_feasibility_error") or "单次 Run 不可行")
+                + "；因此当前 Run 数量上限为 0"
+            )
+            self._set_state("error")
+        else:
+            state = "可行" if requested_count <= maximum else "超出上限"
+            capacity_label = (
+                f"近似可排列最多 {maximum} 次 Run"
+                if bool(payload.get("capacity_is_approximate"))
+                else f"正式计划最多 {maximum} 次 Run"
+            )
+            extra = f"；每次调度占用 {occupied:.6g} s" if occupied is not None else ""
+            official_note = (
+                "；该上限来自近似传播时延，不表示正式计划已通过光行时解算"
+                if bool(payload.get("capacity_is_approximate")) and requested_count <= maximum
+                else ""
+            )
+            self.summary.setText(
+                f"{capacity_label}；当前设置 {requested_count} 次（{state}）{extra}{official_note}"
+            )
+            self._set_state("ok" if requested_count <= maximum else "error")
+        self.timeline.set_plan(payload)
+        if not bool(payload.get("visibility_applicable", True)):
+            visibility_note = "自定义直角坐标：不应用地平可见性约束"
+        elif not bool(payload.get("visibility_computed", True)):
+            visibility_note = "灰色斜纹：当前坐标无法计算几何可见性"
+            if bool(payload.get("allow_unobservable", False)):
+                visibility_note += "，已按“包含非可见时段”忽略该约束"
+        else:
+            visibility_note = "绿色/红色：可见/不可见"
+        feasibility_note = (
+            "　当前轨道仅显示请求的假设布局，不表示可执行。"
+            if not bool(payload.get("run_feasible", True))
+            else ""
+        )
+        self.detail.setText(
+            visibility_note
+            + "　深蓝：发射 Run　浅蓝：调度预留尾部（过短时放大到 4 px）　紫色：近似 ADC 窗"
+            + feasibility_note
+        )
+
+    def _set_state(self, state: str) -> None:
+        self.summary.setProperty("previewState", state)
+        self.summary.style().unpolish(self.summary)
+        self.summary.style().polish(self.summary)
+
+
+def _format_gate_delay(gate_s: float) -> str:
+    if gate_s <= 0.0:
+        return "0 s"
+    if gate_s >= 1.0:
+        return f"{gate_s:.3f} s"
+    if gate_s >= 1e-3:
+        return f"{gate_s * 1e3:.3f} ms"
+    if gate_s >= 1e-6:
+        return f"{gate_s * 1e6:.3f} µs"
+    return f"{gate_s * 1e9:.3f} ns"
+
+
+def _format_range_resolution(range_m: float) -> str:
+    if range_m >= 1000.0:
+        return f"{range_m / 1000.0:.3g} km"
+    return f"{range_m:.3g} m"
+
+
+def _widget_finite(widget) -> float | None:
+    if not isinstance(widget, UnitValueWidget):
+        return None
+    try:
+        value = float(widget.value())
+    except (NumericInputError, TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _range_gate_readout_text(widgets: dict, config: dict) -> str:
+    """Read-only stationary conversion shown under the collection path gate."""
+
+    from observation.src.light_time import C
+    from observation.src.planning import stationary_chirp_gate
+
+    extent = _widget_finite(widgets.get("observation.target.extent_path_m"))
+    pulse = _widget_finite(widgets.get("observation.transmit.pulse_width_s"))
+    sample_rate = _widget_finite(widgets.get("observation.receiver_sampling.fast_sample_rate_hz"))
+    if (
+        extent is None
+        or pulse is None
+        or sample_rate is None
+        or extent < 0.0
+        or pulse <= 0.0
+        or sample_rate <= 0.0
+    ):
+        return "采集路径窗、脉宽或采样率还不能换算。"
+    gate_s, n_pre, _n_after, fast_count = stationary_chirp_gate(extent, pulse, sample_rate)
+    text = (
+        f"静止时标：门时延 {_format_gate_delay(gate_s)}（{n_pre} 点），整行 {fast_count} 点"
+    )
+    waveform = ((config or {}).get("echo") or {}).get("waveform") or {}
+    bandwidth = waveform.get("bandwidth_hz")
+    try:
+        bandwidth_hz = float(bandwidth)
+    except (TypeError, ValueError):
+        bandwidth_hz = float("nan")
+    if math.isfinite(bandwidth_hz) and bandwidth_hz > 0.0:
+        text += f"，压缩后距离分辨 {_format_range_resolution(C / (2.0 * bandwidth_hz))}"
+    return text
+
+
 class ParameterForm(QWidget):
     """Scrollable semantic cards for the full pipeline config."""
 
@@ -170,6 +475,11 @@ class ParameterForm(QWidget):
         self._config: dict = {}
         self._mesh_echo_draft: dict | None = None
         self._noise_draft: dict | None = None
+        self._schedule_draft: dict = {}
+        self.schedule_feedback: ScheduleFeedbackWidget | None = None
+        self.range_gate_readout: QLabel | None = None
+        self._schedule_preview_dirty = True
+        self._scroll_floor = 0
         self.monostatic = False
         self.point_target = False
         root = QVBoxLayout(self)
@@ -194,12 +504,18 @@ class ParameterForm(QWidget):
         point_target: bool = False,
         focus_path: str | None = None,
         preserve_scroll: bool = True,
+        retain_scroll_extent: bool = False,
     ) -> None:
         scroll_bar = self.scroll.verticalScrollBar()
         scroll_value = scroll_bar.value() if preserve_scroll else 0
+        previous_extent = max(self.canvas.height(), scroll_bar.maximum() + self.scroll.viewport().height()) if retain_scroll_extent else 0
+        self._scroll_floor = previous_extent
+        self.canvas.setMinimumHeight(previous_extent)
         self._config = config
         self.field_widgets.clear()
         self._cards.clear()
+        self.schedule_feedback = None
+        self.range_gate_readout = None
         self.monostatic = bool(monostatic)
         self.point_target = bool(point_target)
         while self.canvas_layout.count():
@@ -223,6 +539,8 @@ class ParameterForm(QWidget):
         self.canvas_layout.addStretch(1)
 
         def _restore_view() -> None:
+            self.canvas_layout.activate()
+            self._apply_canvas_height()
             if focus_path:
                 widget = self.field_widgets.get(focus_path)
                 if widget is not None:
@@ -231,12 +549,16 @@ class ParameterForm(QWidget):
                 scroll_bar.setValue(scroll_value)
 
         QTimer.singleShot(0, _restore_view)
+        if stage == "observation":
+            QTimer.singleShot(0, self._connect_schedule_feedback_updates)
+            QTimer.singleShot(0, self._connect_range_gate_readout)
 
     def collect(self, *, strip: bool = True) -> dict:
         # Start from the live model so hidden conditional fields are not wiped.
         config = copy.deepcopy(self._config) if self._config else {}
         geodetic_rotation: dict[str, bool] = {}
         linear_motion: dict[str, bool] = {}
+        random_selection = None
         noise_enabled = None
         for path, widget in self.field_widgets.items():
             value = self._widget_value(widget)
@@ -246,6 +568,9 @@ class ParameterForm(QWidget):
             if path.endswith(".linear_motion"):
                 linear_motion[path.split(".")[1]] = bool(value)
                 continue
+            if path == "observation.schedule.random_selection":
+                random_selection = bool(value)
+                continue
             if path == "echo.noise_enabled":
                 # Presentation-only toggle; maps to snr_db null vs numeric.
                 noise_enabled = bool(value)
@@ -253,7 +578,15 @@ class ParameterForm(QWidget):
             assign_path(config, path, value)
 
         observation = config.get("observation")
+        _reject_observation_waveform(observation)
         if isinstance(observation, dict):
+            schedule = observation.get("schedule")
+            if isinstance(schedule, dict) and schedule.get("selection") != "manual" and random_selection is not None:
+                schedule["selection"] = "random_visible_time" if random_selection else "equal_visible_time"
+            if isinstance(schedule, dict) and schedule.get("selection") == "manual":
+                visibility = observation.get("visibility")
+                if isinstance(visibility, dict):
+                    visibility.pop("allow_unobservable_for_simulation", None)
             for role in STATION_GROUPS:
                 group = observation.get(role)
                 if not isinstance(group, dict):
@@ -267,23 +600,47 @@ class ParameterForm(QWidget):
                 elif group.get("state") == "cartesian":
                     group["state"] = "linear" if linear_motion.get(role, False) else "static"
                 observation[role] = self._normalize_state_group(group, role=role)
+            self._normalize_visibility_for_stations(observation)
             target = observation.get("target")
             if isinstance(target, dict):
+                if target.get("state") == "static" and "target" in linear_motion:
+                    target["state"] = "linear" if linear_motion["target"] else "static"
                 observation["target"] = self._normalize_state_group(target, role="target")
         echo = config.get("echo")
         if isinstance(echo, dict):
             if noise_enabled is not None:
                 self._apply_noise_enabled(echo, noise_enabled)
             self._normalize_echo_stage(echo)
-            observation = config.get("observation", {})
-            obs_type = None
-            if isinstance(observation, dict):
-                obs_type = observation.get("waveform", {}).get("type")
-            if obs_type:
-                echo.setdefault("waveform", {})["type"] = obs_type
         if strip:
             self._strip_inapplicable_fields(config)
         return config
+
+    @staticmethod
+    def _station_uses_local_horizon(station) -> bool:
+        if not isinstance(station, dict):
+            return False
+        return str(station.get("state", "static")).lower() not in {"static", "linear"}
+
+    @classmethod
+    def _normalize_visibility_for_stations(cls, observation: dict) -> None:
+        transmitter = observation.get("transmitter") or {}
+        receiver = observation.get("receiver") or transmitter
+        tx_horizon = cls._station_uses_local_horizon(transmitter)
+        rx_horizon = cls._station_uses_local_horizon(receiver)
+        if not (tx_horizon or rx_horizon):
+            observation.pop("visibility", None)
+            return
+        visibility = observation.setdefault("visibility", {})
+        visibility.setdefault("sample_step_s", 30.0)
+        visibility.setdefault("allow_unobservable_for_simulation", False)
+        if tx_horizon:
+            visibility.setdefault("min_tx_elevation_deg", 0.0)
+        else:
+            visibility.pop("min_tx_elevation_deg", None)
+        if rx_horizon:
+            visibility.setdefault("min_rx_elevation_deg", 0.0)
+        else:
+            visibility.pop("min_rx_elevation_deg", None)
 
     def collect_stage(self, stage: str) -> dict:
         return self.collect().get(stage, {})
@@ -301,9 +658,39 @@ class ParameterForm(QWidget):
             layout.addWidget(canvas)
         return section
 
+    def _content_bottom(self) -> int:
+        margin_bottom = self.canvas_layout.contentsMargins().bottom()
+        needed = margin_bottom
+        for cards in self._cards:
+            if cards.isHidden():
+                continue
+            needed = max(
+                needed,
+                cards.mapTo(self.canvas, cards.rect().bottomRight()).y() + margin_bottom,
+            )
+        return needed
+
+    def _apply_canvas_height(self) -> None:
+        """Size the scroll canvas to the cards, and allow that height to shrink.
+
+        sizeHint includes the previous minimumHeight, so using it as the next
+        minimum locks the tall single-column measurement from startup.
+        """
+
+        needed = max(self._content_bottom(), getattr(self, "_scroll_floor", 0))
+        if self.canvas.minimumHeight() != needed:
+            self.canvas.setMinimumHeight(needed)
+        viewport_h = self.scroll.viewport().height()
+        target = max(needed, viewport_h)
+        if self.canvas.height() != target:
+            self.canvas.resize(self.canvas.width(), target)
+
     def _relayout(self) -> None:
+        for canvas in self._cards:
+            if not getattr(canvas, "_reflowing", False):
+                canvas.reflow()
         self.canvas_layout.activate()
-        self.canvas.adjustSize()
+        self._apply_canvas_height()
 
     def _create_cards(self, stage: str, stage_data: dict) -> list[QFrame]:
         sections = self._presentation_sections(stage, stage_data)
@@ -402,7 +789,8 @@ class ParameterForm(QWidget):
                     else:
                         fields.append((f"{group_name}.state", "cartesian"))
                 else:
-                    fields.append((f"{group_name}.state", group.get("state", "static")))
+                    state = str(group.get("state", "static"))
+                    fields.append((f"{group_name}.state", "static" if state == "linear" else state))
             elif key in group:
                 fields.append((f"{group_name}.{key}", group[key]))
 
@@ -440,9 +828,15 @@ class ParameterForm(QWidget):
                             group.get("velocity_m_s", copy.deepcopy(STATE_DEFAULTS["velocity_m_s"])),
                         )
                     )
+        elif group_name == "target" and state in {"static", "linear"}:
+            position_key = "position0_m" if state == "linear" else "position_m"
+            fields.append((f"{group_name}.{position_key}", self._state_field_value(position_key, group)))
+            fields.append((f"{group_name}.linear_motion", state == "linear"))
+            if state == "linear":
+                fields.append((f"{group_name}.velocity_m_s", self._state_field_value("velocity_m_s", group)))
         else:
             for child_key in STATE_FIELDS.get(state, ()):
-                if child_key == "id":
+                if child_key == "object_type":
                     continue
                 fields.append(
                     (
@@ -450,8 +844,8 @@ class ParameterForm(QWidget):
                         group.get(child_key, copy.deepcopy(STATE_DEFAULTS.get(child_key, ""))),
                     )
                 )
-            # target.extent_path_m is presented on the chirp receiver_sampling
-            # card (ADC window sizing), not on the target body card.
+            # target.extent_path_m is the chirp collection path gate. It is
+            # presented on the receiver_sampling card, not on the target body card.
         return fields
 
     def _create_card(self, stage: str, group_name: str, fields: list) -> QFrame:
@@ -465,6 +859,7 @@ class ParameterForm(QWidget):
         outer.setSpacing(12)
         header = QLabel(title)
         header.setObjectName("cardTitle")
+        header.setSizePolicy(EXPANDING, FIXED)
         outer.addWidget(header)
         grid = QGridLayout()
         grid.setHorizontalSpacing(14)
@@ -473,26 +868,113 @@ class ParameterForm(QWidget):
         grid.setColumnStretch(1, 1)
         self._render_fields(grid, stage, group_name, fields)
         outer.addLayout(grid)
+        if stage == "observation" and group_name == "plan":
+            self.schedule_feedback = ScheduleFeedbackWidget(
+                self._refresh_schedule_feedback, card
+            )
+            outer.addWidget(self.schedule_feedback)
+        if stage == "observation" and group_name == "receiver_sampling":
+            readout = QLabel()
+            readout.setObjectName("rangeGateReadout")
+            readout.setWordWrap(True)
+            readout.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            readout.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+            outer.addWidget(readout)
+            self.range_gate_readout = readout
         card.setSizePolicy(EXPANDING, FIXED)
         return card
+
+    def _connect_schedule_feedback_updates(self) -> None:
+        feedback = self.schedule_feedback
+        if feedback is None:
+            return
+        for widget in self.field_widgets.values():
+            if isinstance(widget, UnitValueWidget):
+                widget.edit.editingFinished.connect(self._mark_schedule_feedback_stale)
+                if widget.unit_combo is not None:
+                    widget.unit_combo.currentIndexChanged.connect(self._mark_schedule_feedback_stale)
+            elif isinstance(widget, VectorValueWidget):
+                for edit in widget.edits:
+                    edit.editingFinished.connect(self._mark_schedule_feedback_stale)
+            elif isinstance(widget, QLineEdit):
+                widget.editingFinished.connect(self._mark_schedule_feedback_stale)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_schedule_feedback_stale)
+            elif isinstance(widget, BooleanFieldWidget):
+                widget.checkbox.toggled.connect(self._mark_schedule_feedback_stale)
+        self._schedule_preview_dirty = True
+        feedback.show_stale("请点击「刷新预览」生成观测计划")
+
+    def _connect_range_gate_readout(self) -> None:
+        if self.range_gate_readout is None:
+            return
+        for path in (
+            "observation.target.extent_path_m",
+            "observation.receiver_sampling.fast_sample_rate_hz",
+            "observation.transmit.pulse_width_s",
+        ):
+            widget = self.field_widgets.get(path)
+            if isinstance(widget, UnitValueWidget):
+                widget.edit.textChanged.connect(self._refresh_range_gate_readout)
+                widget.edit.editingFinished.connect(self._refresh_range_gate_readout)
+                if widget.unit_combo is not None:
+                    widget.unit_combo.currentIndexChanged.connect(self._refresh_range_gate_readout)
+        self._refresh_range_gate_readout()
+
+    def _refresh_range_gate_readout(self, *_args) -> None:
+        label = self.range_gate_readout
+        if label is None:
+            return
+        label.setText(_range_gate_readout_text(self.field_widgets, self._config))
+        self._relayout()
+
+    def _mark_schedule_feedback_stale(self, *_args) -> None:
+        feedback = self.schedule_feedback
+        if feedback is None or self._active_stage != "observation":
+            return
+        if self._schedule_preview_dirty:
+            return
+        self._schedule_preview_dirty = True
+        feedback.show_stale("参数已更新，请刷新预览")
+
+    def _refresh_schedule_feedback(self, *_args, **_kwargs) -> None:
+        feedback = self.schedule_feedback
+        if feedback is None or self._active_stage != "observation":
+            return
+        try:
+            config = self.collect(strip=False)
+            observation = config.get("observation", {})
+            schedule = observation.get("schedule", {})
+            if schedule.get("selection") == "manual":
+                feedback.show_plan({}, 0)
+                self._schedule_preview_dirty = False
+                self._relayout()
+                return
+            from observation.src.campaign_planning import resolve_campaign_run_plan
+
+            plan = resolve_campaign_run_plan(
+                observation, allow_infeasible_preview=True
+            )
+            feedback.show_plan(
+                plan.json_payload(observation.get("transmitter")),
+                int(schedule.get("run_count", 0)),
+            )
+            self._schedule_preview_dirty = False
+            self._relayout()
+        except Exception as exc:
+            feedback.show_error(str(exc))
+            self._schedule_preview_dirty = False
+            self._relayout()
 
     def _render_fields(self, grid: QGridLayout, stage: str, group_name: str, fields: list) -> None:
         row = 0
         label_width = 108
-        previous_root = None
         handled: set[str] = set()
         field_values = {path: value for path, value in fields}
         for relative_path, value in fields:
             if relative_path in handled:
                 continue
             absolute = f"{stage}.{relative_path}"
-            root = relative_path.split(".", 1)[0]
-            if previous_root is not None and root != previous_root and "." in relative_path:
-                spacer = QLabel("")
-                spacer.setFixedHeight(6)
-                grid.addWidget(spacer, row, 0, 1, 2)
-                row += 1
-            previous_root = root
             key = relative_path.split(".")[-1]
 
             if stage == "echo" and relative_path == "target.spin_pole_frame":
@@ -539,6 +1021,23 @@ class ParameterForm(QWidget):
                 )
                 continue
 
+            if stage == "observation" and group_name == "target" and key == "state":
+                label = QLabel("位置来源")
+                label.setObjectName("fieldLabel")
+                label.setMinimumWidth(label_width)
+                widget = self._field_widget(relative_path, value)
+                widget.setToolTip(absolute)
+                self.field_widgets[absolute] = widget
+                grid.addWidget(label, row, 0)
+                grid.addWidget(widget, row, 1)
+                handled.add(relative_path)
+                row += 1
+                if value == "static":
+                    row = self._render_station_state_children(
+                        grid, stage, group_name, "cartesian", field_values, handled, label_width, row
+                    )
+                continue
+
             if relative_path.endswith(".initial_geodetic_coordinates"):
                 continue
             if key in {"lat_deg", "lon_deg", "height_m", "geodetic_time_dependent", "linear_motion"}:
@@ -547,19 +1046,30 @@ class ParameterForm(QWidget):
                     continue
 
             text = FIELD_LABELS.get(key, key)
+            if group_name == "plan" and relative_path == "schedule.start_utc":
+                text = "发射选时范围开始"
+            elif group_name == "plan" and relative_path == "schedule.end_utc":
+                text = "发射选时范围结束"
             label = QLabel(text)
             label.setObjectName("fieldLabel")
             label.setMinimumWidth(label_width)
             widget = self._field_widget(relative_path, value)
-            widget.setToolTip(absolute)
+            tooltip = self._field_tooltip(key, absolute)
+            widget.setToolTip(tooltip)
+            label.setToolTip(tooltip)
             self.field_widgets[absolute] = widget
             if isinstance(widget, BooleanFieldWidget):
                 if relative_path == "scattering_spot.enabled":
                     widget.checkbox.toggled.connect(lambda _checked: self._on_spot_enabled_changed())
                 if relative_path == "noise_enabled":
                     widget.checkbox.toggled.connect(lambda _checked: self._on_noise_enabled_changed())
-                grid.addWidget(label, row, 0)
-                grid.addWidget(widget, row, 1, alignment=Qt.AlignmentFlag.AlignLeft)
+                if group_name == "plan" and key in {"allow_unobservable_for_simulation", "random_selection"}:
+                    widget.checkbox.setText(text)
+                    label.deleteLater()
+                    grid.addWidget(widget, row, 0, 1, 2, alignment=Qt.AlignmentFlag.AlignLeft)
+                else:
+                    grid.addWidget(label, row, 0)
+                    grid.addWidget(widget, row, 1, alignment=Qt.AlignmentFlag.AlignLeft)
             elif isinstance(widget, (VectorValueWidget, DirectionBodyWidget)):
                 section = SubsectionPanel(text, absolute, label_width)
                 section.heading.setBuddy(widget)
@@ -567,7 +1077,7 @@ class ParameterForm(QWidget):
                 label.deleteLater()
                 grid.addWidget(section.heading, row, 0, alignment=Qt.AlignmentFlag.AlignTop)
                 grid.addWidget(section, row, 1)
-            elif key in {"model_path", "runs"} or key.endswith("_utc"):
+            elif key in {"model_path", "runs"} or (key.endswith("_utc") and group_name != "plan"):
                 grid.addWidget(label, row, 0, 1, 2)
                 grid.addWidget(widget, row + 1, 0, 1, 2)
                 row += 1
@@ -616,10 +1126,7 @@ class ParameterForm(QWidget):
                 )
             self.field_widgets[absolute] = toggle_widget
             handled.add(toggle_path)
-            label = QLabel(FIELD_LABELS["geodetic_time_dependent"])
-            label.setObjectName("fieldLabel")
-            label.setMinimumWidth(label_width)
-            grid.addWidget(label, row, 0)
+            toggle_widget.checkbox.setText(FIELD_LABELS["geodetic_time_dependent"])
             grid.addWidget(toggle_widget, row, 1, alignment=Qt.AlignmentFlag.AlignLeft)
             row += 1
             return row
@@ -656,10 +1163,7 @@ class ParameterForm(QWidget):
             )
         self.field_widgets[absolute] = toggle_widget
         handled.add(toggle_path)
-        label = QLabel(FIELD_LABELS["linear_motion"])
-        label.setObjectName("fieldLabel")
-        label.setMinimumWidth(label_width)
-        grid.addWidget(label, row, 0)
+        toggle_widget.checkbox.setText(FIELD_LABELS["linear_motion"])
         grid.addWidget(toggle_widget, row, 1, alignment=Qt.AlignmentFlag.AlignLeft)
         row += 1
 
@@ -680,17 +1184,29 @@ class ParameterForm(QWidget):
             row += 1
         return row
 
+    def _field_tooltip(self, key: str, absolute: str) -> str:
+        hint = FIELD_TOOLTIPS.get(key)
+        if hint:
+            return f"{hint}\n配置字段：{absolute}"
+        return absolute
+
     def _field_widget(self, full_path: str, value):
         key = full_path.split(".")[-1]
         if isinstance(value, bool) or key in {"geodetic_time_dependent", "linear_motion"}:
-            return BooleanFieldWidget(bool(value))
+            widget = BooleanFieldWidget(bool(value))
+            if full_path == "schedule.random_selection":
+                widget.checkbox.toggled.connect(lambda _checked: self._on_schedule_selection_changed(focus_path="observation.schedule.random_selection"))
+            return widget
         if key in CHOICES or (key == "state"):
             combo = NoWheelComboBox()
             choices = self._choices_for_field(full_path)
             current = format_value(value)
+            if full_path == "schedule.selection" and current != "manual":
+                current = "automatic"
             for item in choices:
                 data = "true" if item is True else "false" if item is False else str(item)
-                combo.addItem(OPTION_LABELS.get(data, data), data)
+                label = "手动坐标" if full_path == "target.state" and data == "static" else OPTION_LABELS.get(data, data)
+                combo.addItem(label, data)
             existing = [combo.itemData(i) for i in range(combo.count())]
             if current not in existing:
                 # Preserve unknown values instead of silently rewriting config.
@@ -709,10 +1225,6 @@ class ParameterForm(QWidget):
             if key == "spin_pole_frame":
                 combo.currentIndexChanged.connect(
                     lambda _index, path=full_path: self._on_spin_pole_frame_changed(path)
-                )
-            if full_path == "waveform.type":
-                combo.currentIndexChanged.connect(
-                    lambda _index: self._on_waveform_type_changed()
                 )
             if full_path == "scattering_model":
                 combo.currentIndexChanged.connect(
@@ -753,11 +1265,13 @@ class ParameterForm(QWidget):
 
     def _choices_for_field(self, full_path: str) -> tuple:
         key = full_path.split(".")[-1]
+        if full_path == "schedule.selection":
+            return ("manual", "automatic")
         if key != "state":
             return CHOICES[key]
         group_name = full_path.split(".", 1)[0]
         if self._active_stage == "observation" and group_name == "target":
-            return TARGET_STATE_CHOICES
+            return ("static", "horizons_vectors")
         if self._active_stage == "observation" and group_name in STATION_GROUPS:
             return STATION_COORDINATE_CHOICES
         return CHOICES[key]
@@ -851,7 +1365,7 @@ class ParameterForm(QWidget):
             if not sections["radar_parameters"]:
                 sections.pop("radar_parameters", None)
 
-        # Waveform type is owned by observation; hide the echo mirror.
+        # Waveform type lives on the global combo as echo.waveform.type.
         waveform_type = self._active_waveform_type(stage_data)
         scattering_model = str(stage_data.get("scattering_model", "mesh")).lower()
         if self.point_target:
@@ -887,20 +1401,19 @@ class ParameterForm(QWidget):
         return sections
 
     def _filter_observation_sections(self, stage_data: dict, sections: dict[str, list]) -> dict[str, list]:
-        waveform_type = str((stage_data.get("waveform") or {}).get("type") or "continuous_wave")
-        if "waveform" in sections:
-            sections["waveform"] = [
-                item for item in sections["waveform"] if item[0] != "waveform.type"
-            ]
-            if not sections["waveform"]:
-                sections.pop("waveform", None)
+        if "schedule" in stage_data:
+            waveform_type = "chirp_pulse_train"
+        elif "receive" in stage_data:
+            waveform_type = "continuous_wave"
+        else:
+            waveform_type = self._active_waveform_type()
         if waveform_type == "continuous_wave":
-            for name in ("radar_system", "receiver_sampling", "plan"):
+            for name in ("radar_system", "receiver_sampling", "plan", "transmit"):
                 sections.pop(name, None)
         else:
             sections.pop("receive", None)
-            # Chirp ADC windows use target.extent_path_m with pre/post guards.
-            # Keep the JSON path under target, but show the control here.
+            # The chirp collection path gate stays under target in JSON and is
+            # shown on this card next to the fast-time sample rate.
             target_group = stage_data.get("target") or {}
             extent = target_group.get("extent_path_m", 0.0)
             sampling_fields = sections.setdefault("receiver_sampling", [])
@@ -941,6 +1454,39 @@ class ParameterForm(QWidget):
         selection = str(schedule.get("selection", "manual"))
         plan = sections.get("plan", [])
         if plan:
+            transmitter = stage_data.get("transmitter") or {}
+            receiver = stage_data.get("receiver") or transmitter
+            tx_horizon = self._station_uses_local_horizon(transmitter)
+            rx_horizon = self._station_uses_local_horizon(receiver)
+            visibility_applicable = tx_horizon or rx_horizon
+            seed_value = next((value for path, value in plan if path == "schedule.random_seed"), 20260904)
+            plan = [
+                (path, value)
+                for path, value in plan
+                if path not in {"visibility.allow_unobservable_for_simulation", "schedule.random_seed"}
+            ]
+            if not visibility_applicable:
+                plan = [(path, value) for path, value in plan if not path.startswith("visibility.")]
+            else:
+                if not tx_horizon:
+                    plan = [(path, value) for path, value in plan if path != "visibility.min_tx_elevation_deg"]
+                if not rx_horizon:
+                    plan = [(path, value) for path, value in plan if path != "visibility.min_rx_elevation_deg"]
+            if selection != "manual":
+                if visibility_applicable:
+                    plan.append(
+                        (
+                            "visibility.allow_unobservable_for_simulation",
+                            bool(
+                                (stage_data.get("visibility") or {}).get(
+                                    "allow_unobservable_for_simulation", False
+                                )
+                            ),
+                        )
+                    )
+                plan.append(("schedule.random_selection", selection == "random_visible_time"))
+                if selection == "random_visible_time":
+                    plan.append(("schedule.random_seed", seed_value))
             auto_only = {
                 "schedule.run_count",
                 "schedule.run_duration_s",
@@ -969,36 +1515,57 @@ class ParameterForm(QWidget):
         return sections
 
     def _active_waveform_type(self, echo_stage: dict | None = None) -> str:
+        echo = echo_stage if isinstance(echo_stage, dict) else None
+        if echo is None and self._config:
+            echo = self._config.get("echo")
+        if isinstance(echo, dict):
+            echo_type = (echo.get("waveform") or {}).get("type")
+            if echo_type:
+                if echo_type == "lfm_chirp":
+                    raise ValueError("echo.waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
+                return str(echo_type)
         observation = self._config.get("observation", {}) if self._config else {}
-        obs_type = None
         if isinstance(observation, dict):
-            obs_type = observation.get("waveform", {}).get("type")
-        if obs_type:
-            return str(obs_type)
-        if isinstance(echo_stage, dict):
-            return str(echo_stage.get("waveform", {}).get("type", "continuous_wave"))
+            if "schedule" in observation:
+                return "chirp_pulse_train"
+            if "receive" in observation:
+                return "continuous_wave"
         return "continuous_wave"
 
     def _strip_inapplicable_fields(self, config: dict) -> None:
         observation = config.get("observation")
         echo = config.get("echo")
         inversion = config.get("inversion")
+        _reject_observation_waveform(observation)
         waveform_type = "continuous_wave"
+        echo_type = None
+        if isinstance(echo, dict):
+            echo_type = (echo.get("waveform") or {}).get("type")
+            if echo_type:
+                waveform_type = str(echo_type)
+        if echo_type is None and isinstance(observation, dict):
+            if "schedule" in observation:
+                waveform_type = "chirp_pulse_train"
+            elif "receive" in observation:
+                waveform_type = "continuous_wave"
+        if waveform_type == "lfm_chirp":
+            raise ValueError("echo.waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
         if isinstance(observation, dict):
-            waveform_type = str(
-                (observation.get("waveform") or {}).get("type") or waveform_type
-            )
-            if waveform_type == "lfm_chirp":
-                raise ValueError("waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
             if waveform_type == "continuous_wave":
-                for key in ("schedule", "radar_system", "receiver_sampling"):
+                for key in ("schedule", "radar_system", "receiver_sampling", "transmit"):
                     observation.pop(key, None)
-                waveform = observation.get("waveform")
-                if isinstance(waveform, dict):
-                    for key in ("prf_hz", "pulse_width_s"):
-                        waveform.pop(key, None)
             elif waveform_type == "chirp_pulse_train":
                 observation.pop("receive", None)
+                schedule = observation.get("schedule")
+                if isinstance(schedule, dict):
+                    selection = str(schedule.get("selection", "manual"))
+                    if selection == "manual":
+                        for key in ("run_count", "run_duration_s", "random_seed"):
+                            schedule.pop(key, None)
+                    else:
+                        schedule.pop("runs", None)
+                        if selection != "random_visible_time":
+                            schedule.pop("random_seed", None)
         if isinstance(echo, dict):
             echo.pop("noise_enabled", None)
             model = str(echo.get("scattering_model", "mesh")).lower()
@@ -1018,6 +1585,7 @@ class ParameterForm(QWidget):
                     inversion.pop(key, None)
 
     def _apply_waveform_event_source(self, observation: dict, waveform_type: str) -> None:
+        _reject_observation_waveform(observation)
         if waveform_type == "continuous_wave":
             schedule = observation.get("schedule") or {}
             receive = dict(observation.get("receive") or {})
@@ -1028,12 +1596,8 @@ class ParameterForm(QWidget):
             receive.setdefault("duration_s", 60.0)
             receive.setdefault("sample_rate_hz", 16.0)
             observation["receive"] = receive
-            for key in ("schedule", "radar_system", "receiver_sampling"):
+            for key in ("schedule", "radar_system", "receiver_sampling", "transmit"):
                 observation.pop(key, None)
-            waveform = observation.setdefault("waveform", {})
-            waveform["type"] = "continuous_wave"
-            for key in ("prf_hz", "pulse_width_s"):
-                waveform.pop(key, None)
             return
         receive = observation.get("receive") or {}
         schedule = dict(observation.get("schedule") or {})
@@ -1054,12 +1618,11 @@ class ParameterForm(QWidget):
         )
         observation.setdefault(
             "receiver_sampling",
-            {"fast_sample_rate_hz": 250000.0, "pre_guard_s": 0.001, "post_guard_s": 0.001},
+            {"fast_sample_rate_hz": 250000.0},
         )
-        waveform = observation.setdefault("waveform", {})
-        waveform["type"] = "chirp_pulse_train"
-        for key, value in OBSERVATION_WAVEFORM_DEFAULTS["chirp_pulse_train"].items():
-            waveform.setdefault(key, copy.deepcopy(value))
+        transmit = observation.setdefault("transmit", {})
+        for key, value in OBSERVATION_TRANSMIT_DEFAULTS.items():
+            transmit.setdefault(key, copy.deepcopy(value))
 
     def _normalize_echo_stage(self, echo: dict) -> None:
         target = echo.get("target")
@@ -1091,7 +1654,7 @@ class ParameterForm(QWidget):
         waveform = echo.setdefault("waveform", {})
         waveform_type = str(waveform.get("type") or self._active_waveform_type())
         if waveform_type == "lfm_chirp":
-            raise ValueError("waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
+            raise ValueError("echo.waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
         for key, value in ECHO_WAVEFORM_DEFAULTS.get(waveform_type, {}).items():
             waveform.setdefault(key, copy.deepcopy(value))
 
@@ -1105,12 +1668,13 @@ class ParameterForm(QWidget):
             group = observation.get(role)
             if isinstance(group, dict):
                 observation[role] = self._normalize_state_group(group, role=role)
-        waveform = observation.setdefault("waveform", {})
-        if waveform.get("type") == "lfm_chirp":
-            raise ValueError("waveform.type=lfm_chirp 已废弃；请使用 chirp_pulse_train")
-        waveform_type = str(waveform.get("type", "continuous_wave"))
-        for key, value in OBSERVATION_WAVEFORM_DEFAULTS.get(waveform_type, {}).items():
-            waveform.setdefault(key, copy.deepcopy(value))
+        _reject_observation_waveform(observation)
+        if "schedule" in observation:
+            transmit = observation.setdefault("transmit", {})
+            for key, value in OBSERVATION_TRANSMIT_DEFAULTS.items():
+                transmit.setdefault(key, copy.deepcopy(value))
+        else:
+            observation.pop("transmit", None)
 
     def _normalize_horizons_target(self, observation: dict) -> None:
         target = observation.get("target")
@@ -1301,19 +1865,12 @@ class ParameterForm(QWidget):
             preserve_scroll=True,
         )
 
-    def _on_waveform_type_changed(self) -> None:
-        updated = self.collect(strip=False)
-        waveform_type = str(
-            (updated.get("observation", {}).get("waveform") or {}).get("type", "continuous_wave")
-        )
-        self._commit_waveform_type(updated, waveform_type)
-
     def set_waveform_type(self, waveform_type: str) -> None:
         """Apply the global waveform choice and rebuild the active stage."""
-        if waveform_type not in OBSERVATION_WAVEFORM_DEFAULTS:
+        if waveform_type not in WAVEFORM_TYPES:
             raise ValueError(f"不支持的波形类型：{waveform_type}")
         updated = self.collect(strip=False)
-        updated.setdefault("observation", {}).setdefault("waveform", {})["type"] = waveform_type
+        updated.setdefault("echo", {}).setdefault("waveform", {})["type"] = waveform_type
         self._commit_waveform_type(updated, waveform_type)
 
     def _commit_waveform_type(self, updated: dict, waveform_type: str) -> None:
@@ -1322,11 +1879,8 @@ class ParameterForm(QWidget):
         self._config.clear()
         self._config.update(updated)
         observation = self._config.setdefault("observation", {})
-        waveform = observation.setdefault("waveform", {})
-        waveform["type"] = waveform_type
+        _reject_observation_waveform(observation)
         self._apply_waveform_event_source(observation, waveform_type)
-        for key, value in OBSERVATION_WAVEFORM_DEFAULTS.get(waveform_type, {}).items():
-            waveform.setdefault(key, copy.deepcopy(value))
         echo = self._config.setdefault("echo", {})
         echo_waveform = echo.setdefault("waveform", {})
         echo_waveform["type"] = waveform_type
@@ -1357,23 +1911,61 @@ class ParameterForm(QWidget):
             preserve_scroll=True,
         )
 
-    def _on_schedule_selection_changed(self) -> None:
+    def _capture_schedule_draft(self) -> None:
+        schedule = (self._config.get("observation") or {}).get("schedule") or {}
+        for key in ("runs", "run_count", "run_duration_s", "random_seed"):
+            if key in schedule:
+                self._schedule_draft[key] = copy.deepcopy(schedule[key])
+        seed_widget = self.field_widgets.get("observation.schedule.random_seed")
+        if seed_widget is not None:
+            self._schedule_draft["random_seed"] = self._widget_value(seed_widget)
+        count_widget = self.field_widgets.get("observation.schedule.run_count")
+        if count_widget is not None:
+            self._schedule_draft["run_count"] = self._widget_value(count_widget)
+        duration_widget = self.field_widgets.get("observation.schedule.run_duration_s")
+        if duration_widget is not None:
+            self._schedule_draft["run_duration_s"] = self._widget_value(duration_widget)
+
+    def _on_schedule_selection_changed(self, *, focus_path: str | None = "observation.schedule.selection") -> None:
+        self._capture_schedule_draft()
         self._sync_into_config()
         schedule = self._config.setdefault("observation", {}).setdefault("schedule", {})
         selection = str(schedule.get("selection", "manual"))
         if selection == "manual":
-            schedule.setdefault("runs", [])
+            if self._schedule_draft.get("runs"):
+                schedule["runs"] = copy.deepcopy(self._schedule_draft["runs"])
+            else:
+                start = schedule.get("start_utc") or "2026-01-01T00:00:00Z"
+                duration = float(self._schedule_draft.get("run_duration_s") or 30.0)
+                schedule.setdefault(
+                    "runs",
+                    [{"tx_start_utc": start, "tx_duration_s": duration}],
+                )
+            for key in ("run_count", "run_duration_s", "random_seed"):
+                schedule.pop(key, None)
         else:
-            schedule.setdefault("run_count", 3)
-            schedule.setdefault("run_duration_s", 90.0)
-            schedule.setdefault("random_seed", 20260904)
+            if selection == "automatic":
+                schedule["selection"] = "equal_visible_time"
+                selection = "equal_visible_time"
+            schedule.pop("runs", None)
+            schedule.setdefault("run_count", self._schedule_draft.get("run_count", 3))
+            schedule.setdefault(
+                "run_duration_s", self._schedule_draft.get("run_duration_s", 90.0)
+            )
+            if selection == "random_visible_time":
+                schedule.setdefault(
+                    "random_seed", self._schedule_draft.get("random_seed", 20260904)
+                )
+            else:
+                schedule.pop("random_seed", None)
         self.render(
             self._config,
             self._active_stage,
             monostatic=self.monostatic,
             point_target=self.point_target,
-            focus_path="observation.schedule.selection",
+            focus_path=focus_path,
             preserve_scroll=True,
+            retain_scroll_extent=True,
         )
 
     def _on_scattering_model_changed(self) -> None:

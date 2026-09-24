@@ -6,7 +6,19 @@ import math
 
 import numpy as np
 
-from ..qt_compat import QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QSize, QSizePolicy, Qt, QVBoxLayout, QWidget
+from ..qt_compat import (
+    QCheckBox,
+    QComboBox,
+    QEvent,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QSize,
+    QSizePolicy,
+    Qt,
+    QVBoxLayout,
+    QWidget,
+)
 from ..schema import CONTROL_HEIGHT, EDITABLE_UNIT_WIDTH, FIXED_UNIT_WIDTH
 from ..storage import format_value, parse_value
 
@@ -99,6 +111,11 @@ class UnitValueWidget(QWidget):
             self.unit_combo.setObjectName("unitSuffix")
             self.unit_combo.setFixedSize(EDITABLE_UNIT_WIDTH, CONTROL_HEIGHT - 2)
             self.unit_combo.setToolTip("切换输入单位 / Select input unit")
+            if any(label == "π" and factor == 180.0 for label, factor in unit_options):
+                self.unit_combo.setToolTip("π 表示 π rad（输入 π 的倍数）；可切换输入单位")
+                self.unit_combo.setItemData(
+                    self.unit_combo.findText("π"), "π 表示 π rad（输入 π 的倍数）", Qt.ItemDataRole.ToolTipRole
+                )
             layout.addWidget(self.unit_combo)
             self.unit_suffix = self.unit_combo
         else:
@@ -112,14 +129,27 @@ class UnitValueWidget(QWidget):
             self.unit_suffix = unit
             unit.setVisible(bool(unit_options[0][0]))
         self.setFocusProxy(self.edit)
+        self.edit.installEventFilter(self)
         self._refresh_validity()
 
+    def eventFilter(self, watched, event):
+        if watched is self.edit and event.type() in {QEvent.Type.FocusIn, QEvent.Type.FocusOut}:
+            focused = event.type() == QEvent.Type.FocusIn
+            if self.property("focused") != focused:
+                self.setProperty("focused", focused)
+                self.style().unpolish(self)
+                self.style().polish(self)
+        return super().eventFilter(watched, event)
+
     def _best_unit(self, value: float) -> tuple[str, float]:
-        abs_value = abs(value)
-        for label, multiplier in self.unit_options:
-            if multiplier > 1.0 and abs_value >= multiplier:
-                return label, multiplier
-        return self.unit_options[-1]
+        abs_value = abs(float(value))
+        ordered = sorted(self.unit_options, key=lambda item: float(item[1]), reverse=True)
+        for label, multiplier in ordered:
+            factor = float(multiplier)
+            if abs_value >= factor:
+                return label, factor
+        label, multiplier = ordered[-1]
+        return label, float(multiplier)
 
     def sizeHint(self):
         return QSize(super().sizeHint().width(), CONTROL_HEIGHT)

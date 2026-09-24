@@ -1,0 +1,12 @@
+# 发布归档不包含内部变更证据（审计、计划、逐版本变更说明）。
+# 发行版保留各版本的通用文档（docs/4.2/*.md、docs/4.3/*.md），
+# 不包含“这一版相对上一版改了什么、还剩什么问题”的过程材料。
+# 注意：.gitattributes 里命名目录的模式不会递归生效，必须写成 docs/4.2/vs_4.1/**。
+docs/4.2/vs_4.1/** export-ignore
+docs/4.3/vs_4.2/** export-ignore
+
+# 发布归档不包含测试和用于跑测试的脚本。它们留在仓库里给 CI 和开发使用，
+# 不进入 git archive / GitHub source zip。子模块里面向用户的 scripts 不在此列。
+# 注意：命名目录的模式不会递归生效，必须写成 tests/**。
+tests/** export-ignore
+scripts/** export-ignore

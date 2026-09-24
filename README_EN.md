@@ -12,7 +12,7 @@ The persisted configuration contract is schema v4. A physical quantity has one o
 
 ```powershell
 conda activate pytorch
-python pipeline.py --config configs\campaign_v4_example.json
+python pipeline.py --config configs\chirp_point_target_test.json
 ```
 
-See [the v4 architecture](docs/ARCHITECTURE_V4.md), [field glossary](docs/GLOSSARY.md), and [Chinese GUI manual](docs/GUI_USER_MANUAL.md).
+See [the v4 architecture](docs/4.3/ARCHITECTURE_V4.md), [field glossary](docs/4.3/GLOSSARY.md), and [Chinese GUI manual](docs/4.3/GUI_USER_MANUAL.md). Versioned documentation layout: [docs/4.3/README.md](docs/4.3/README.md). The completed 4.2 snapshot is [docs/4.2/README.md](docs/4.2/README.md).

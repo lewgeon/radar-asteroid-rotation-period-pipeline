@@ -7,10 +7,50 @@ from ..qt_compat import QFrame, QLabel, QSize, QSizePolicy, Qt, QTimer, QVBoxLay
 EXPANDING = QSizePolicy.Policy.Expanding
 FIXED = QSizePolicy.Policy.Fixed
 
+
+def _apply_wrap_heights(widget: QWidget) -> None:
+    """Pin wrapping labels to their height-for-width so layouts cannot ignore wrap."""
+
+    for label in widget.findChildren(QLabel):
+        if label.isHidden() or not label.wordWrap():
+            continue
+        label.setMinimumHeight(0)
+        available = max(1, label.width())
+        needed = label.heightForWidth(available) if label.hasHeightForWidth() else label.sizeHint().height()
+        label.setMinimumHeight(max(1, needed))
+
+
+def _height_for_width(widget: QWidget, width: int) -> int:
+    """Measure wrapping content at the column width without compressing the layout."""
+
+    width = max(1, int(width))
+    # A tall canvas lets wrapping labels take their column width first. Do not
+    # read child geometries after that resize: expanding labels would fill the
+    # extra space and the measured card would stay thousands of pixels tall.
+    widget.resize(width, max(widget.height(), 4096))
+    layout = widget.layout()
+    if layout is None:
+        return max(widget.sizeHint().height(), widget.minimumSizeHint().height()) + 2
+    layout.invalidate()
+    layout.activate()
+    _apply_wrap_heights(widget)
+    layout.invalidate()
+    measured = max(
+        layout.sizeHint().height(),
+        layout.minimumSize().height(),
+        widget.minimumSizeHint().height(),
+    )
+    # QSS draws the 1 px card border inside the widget rectangle.
+    return measured + 2
+
+
+_WRAPPING_CARD_GROUPS = frozenset({"plan", "receiver_sampling"})
+
+
 LANES_BY_STAGE = {
     "observation": (
         ("target", "transmitter", "receiver"),
-        ("waveform", "receive", "radar_system", "receiver_sampling", "plan", "geometry"),
+        ("transmit", "receive", "radar_system", "receiver_sampling", "plan", "geometry"),
     ),
     "echo": (
         ("compute", "radar_parameters", "noise", "echo_options"),
@@ -45,7 +85,12 @@ class ParameterCards(QWidget):
         QTimer.singleShot(0, self.reflow)
 
     def sizeHint(self):
-        return QSize(self.card_minimum, self.minimumHeight())
+        # Keep the width already allocated by the scroll area. Reporting only
+        # card_minimum lets a focus/layout pass shrink the canvas to one column.
+        width = self.card_minimum
+        if self.width() > width:
+            width = self.width()
+        return QSize(width, max(1, self.minimumHeight()))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -56,6 +101,7 @@ class ParameterCards(QWidget):
         if self._reflowing or self.width() <= 0:
             return
         self._reflowing = True
+        used_width = self.width()
         try:
             lanes = LANES_BY_STAGE.get(self.stage, (("general",),))
             if self.width() < self.card_minimum * 2 + self.gap:
@@ -83,8 +129,11 @@ class ParameterCards(QWidget):
                     if item is not None and item.layout() is not None:
                         item.layout().invalidate()
                     card.layout().invalidate()
+                width = max(1, right - left)
                 height = max(card.sizeHint().height(), card.minimumSizeHint().height())
-                card.setGeometry(left, heights[column], max(1, right - left), height)
+                if card.property("groupName") in _WRAPPING_CARD_GROUPS:
+                    height = max(height, _height_for_width(card, width))
+                card.setGeometry(left, heights[column], width, height)
                 heights[column] += height + self.gap
             target_height = max(0, max(heights or [0]) - self.gap)
             if self.minimumHeight() != target_height or self.maximumHeight() != target_height:
@@ -93,6 +142,9 @@ class ParameterCards(QWidget):
                 self.on_layout_changed()
         finally:
             self._reflowing = False
+        # A layout pass can change our width while _reflowing swallows resizeEvent.
+        if abs(self.width() - used_width) > 1:
+            QTimer.singleShot(0, self.reflow)
 
 class SubsectionPanel(QFrame):
     def __init__(self, title: str, config_path: str | None = None, label_width: int = 84):

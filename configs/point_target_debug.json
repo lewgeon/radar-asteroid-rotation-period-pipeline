@@ -11,25 +11,17 @@
       "state": "static",
       "position_m": [0.0, 0.0, 0.0]
     },
-    "visibility": {
-      "min_tx_elevation_deg": 0.0,
-      "min_rx_elevation_deg": 0.0,
-      "sample_step_s": 30.0
-    },
     "radar_system": {
       "mode": "monostatic_switching",
       "switch_time_s": 1.0,
       "safety_margin_s": 1.0
     },
-    "waveform": {
-      "type": "chirp_pulse_train",
+    "transmit": {
       "prf_hz": 4.0,
       "pulse_width_s": 0.001
     },
     "receiver_sampling": {
-      "fast_sample_rate_hz": 250000.0,
-      "pre_guard_s": 0.001,
-      "post_guard_s": 0.001
+      "fast_sample_rate_hz": 250000.0
     },
     "schedule": {
       "start_utc": "2026-01-01T00:00:00Z",

@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="960" viewBox="0 0 1200 960" role="img" aria-labelledby="title desc">
+  <title id="title">自动发射选时与连续 ADC 窗示意图</title>
+  <desc id="desc">五种自动选时情形，每行依次显示几何可见性、Run 调度区间和 Run 级连续 ADC 窗。</desc>
+  <defs>
+    <style>
+      .zh{font-family:SimSun,"Songti SC","Noto Serif CJK SC",serif;fill:#252a30}.math{font-family:"Cambria Math","Times New Roman",serif;font-style:italic;fill:#252a30}.title{font-size:24px;font-weight:600}.head{font-size:17px;font-weight:600}.body{font-size:15px}.small{font-size:13px;fill:#56616c}.letter{font-family:"Times New Roman",serif;font-size:22px;font-weight:700;fill:#252a30}.sep{stroke:#d9dee3;stroke-width:1}.visible{stroke:#359565;stroke-width:7}.hidden{stroke:#cb5d5d;stroke-width:7}.tick{stroke:#66717c;stroke-width:1}.run{fill:#326da8}.reserve{fill:#bed7ef}.adc{fill:#7d5aa2}.pulse{stroke:#fff;stroke-width:1.4;opacity:.9}.bracket{stroke:#65717c;stroke-width:1.2;fill:none}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8Z" fill="#359565"/></marker>
+    <g id="run-wide"><rect width="70" height="18" rx="2" class="run"/><rect x="70" width="180" height="18" rx="2" class="reserve"/><path d="M12 2v14M26 2v14M40 2v14M54 2v14M68 2v14" class="pulse"/></g>
+    <g id="run-medium"><rect width="48" height="18" rx="2" class="run"/><rect x="48" width="115" height="18" rx="2" class="reserve"/><path d="M10 2v14M22 2v14M34 2v14M46 2v14" class="pulse"/></g>
+    <g id="run-small"><rect width="36" height="18" rx="2" class="run"/><rect x="36" width="92" height="18" rx="2" class="reserve"/><path d="M9 2v14M18 2v14M27 2v14M35 2v14" class="pulse"/></g>
+    <path id="axis-arrow" d="M0 -5L11 0L0 5Z" fill="#359565"/>
+  </defs>
+  <rect width="1200" height="960" fill="#fff"/>
+  <text x="52" y="46" class="zh title">自动发射选时与连续 ADC 窗</text>
+  <g transform="translate(573 31)"><line x1="0" y1="0" x2="35" y2="0" class="visible"/><text x="45" y="5" class="zh small">可见</text><line x1="112" y1="0" x2="147" y2="0" class="hidden"/><text x="157" y="5" class="zh small">不可见</text><rect x="240" y="-8" width="38" height="16" rx="2" class="run"/><text x="288" y="5" class="zh small">发射 Run</text><rect x="382" y="-8" width="38" height="16" rx="2" class="reserve"/><text x="430" y="5" class="zh small">调度预留尾部</text></g>
+  <g transform="translate(573 58)"><rect x="0" y="-5" width="38" height="10" rx="2" class="adc"/><text x="48" y="5" class="zh small">Run 级连续 ADC 窗</text></g>
+
+  <rect x="52" y="82" width="1096" height="132" rx="4" fill="#fafbfc" stroke="#cfd5db"/>
+  <text x="73" y="110" class="zh head">单次 Run：调度预留与实际采样是两条时间线</text>
+  <text x="73" y="148" class="zh body">调度</text><use href="#run-wide" x="172" y="133"/>
+  <path d="M172 159v7h70v-7" class="bracket"/><text x="203" y="184" class="math body">D</text>
+  <path d="M172 188v7h250v-7" class="bracket"/><text x="292" y="210" class="math body">H</text>
+  <text x="510" y="148" class="zh body">采样</text><rect x="604" y="137" width="150" height="10" rx="2" class="adc"/>
+  <text x="793" y="143" class="zh small">ADC 窗由逐脉冲光行时求解确定，</text><text x="793" y="166" class="zh small">不等同于浅蓝色调度预留尾部。</text>
+
+  <text x="52" y="251" class="zh small">选时规则</text><text x="357" y="251" class="zh small">发射选时范围与几何可见性</text><text x="1080" y="251" class="zh small">时间</text>
+
+  <!-- A -->
+  <g transform="translate(0 283)">
+    <line x1="52" y1="91" x2="1148" y2="91" class="sep"/>
+    <text x="52" y="8" class="letter">A</text><text x="86" y="8" class="zh head">允许非可见时段</text><text x="86" y="32" class="zh body">1 次 Run：取可行起点中点</text>
+    <line x1="360" y1="5" x2="470" y2="5" class="hidden"/><line x1="470" y1="5" x2="710" y2="5" class="visible"/><line x1="710" y1="5" x2="820" y2="5" class="hidden"/><line x1="820" y1="5" x2="1136" y2="5" class="visible"/><use href="#axis-arrow" x="1136" y="5"/>
+    <line x1="360" y1="-5" x2="360" y2="15" class="tick"/><text x="350" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">0</tspan></text><line x1="1128" y1="-5" x2="1128" y2="15" class="tick"/><text x="1118" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">1</tspan></text>
+    <use href="#run-wide" x="648" y="40"/><rect x="760" y="70" width="92" height="9" rx="2" class="adc"/>
+  </g>
+
+  <!-- B -->
+  <g transform="translate(0 403)">
+    <line x1="52" y1="91" x2="1148" y2="91" class="sep"/>
+    <text x="52" y="8" class="letter">B</text><text x="86" y="8" class="zh head">允许非可见时段</text><text x="86" y="32" class="zh body">2 次 Run：包含首、末端点</text>
+    <line x1="360" y1="5" x2="470" y2="5" class="hidden"/><line x1="470" y1="5" x2="710" y2="5" class="visible"/><line x1="710" y1="5" x2="820" y2="5" class="hidden"/><line x1="820" y1="5" x2="1136" y2="5" class="visible"/><use href="#axis-arrow" x="1136" y="5"/>
+    <line x1="360" y1="-5" x2="360" y2="15" class="tick"/><text x="350" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">0</tspan></text><line x1="1128" y1="-5" x2="1128" y2="15" class="tick"/><text x="1118" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">1</tspan></text>
+    <use href="#run-medium" x="360" y="40"/><rect x="430" y="70" width="72" height="9" rx="2" class="adc"/><use href="#run-medium" x="965" y="40"/><rect x="1035" y="70" width="72" height="9" rx="2" class="adc"/>
+  </g>
+
+  <!-- C -->
+  <g transform="translate(0 523)">
+    <line x1="52" y1="91" x2="1148" y2="91" class="sep"/>
+    <text x="52" y="8" class="letter">C</text><text x="86" y="8" class="zh head">允许非可见时段</text><text x="86" y="32" class="zh body">多次 Run：沿可行起点等距</text>
+    <line x1="360" y1="5" x2="470" y2="5" class="hidden"/><line x1="470" y1="5" x2="710" y2="5" class="visible"/><line x1="710" y1="5" x2="820" y2="5" class="hidden"/><line x1="820" y1="5" x2="1136" y2="5" class="visible"/><use href="#axis-arrow" x="1136" y="5"/>
+    <line x1="360" y1="-5" x2="360" y2="15" class="tick"/><text x="350" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">0</tspan></text><line x1="1128" y1="-5" x2="1128" y2="15" class="tick"/><text x="1118" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">1</tspan></text>
+    <use href="#run-small" x="360" y="40"/><rect x="411" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="577" y="40"/><rect x="628" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="794" y="40"/><rect x="845" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="1008" y="40"/><rect x="1059" y="70" width="58" height="9" rx="2" class="adc"/>
+  </g>
+
+  <!-- D -->
+  <g transform="translate(0 643)">
+    <line x1="52" y1="91" x2="1148" y2="91" class="sep"/>
+    <text x="52" y="8" class="letter">D</text><text x="86" y="8" class="zh head">仅限可见时段</text><text x="86" y="32" class="zh body">多个可见窗：沿可行起点等距</text>
+    <line x1="360" y1="5" x2="470" y2="5" class="hidden"/><line x1="470" y1="5" x2="710" y2="5" class="visible"/><line x1="710" y1="5" x2="820" y2="5" class="hidden"/><line x1="820" y1="5" x2="1136" y2="5" class="visible"/><use href="#axis-arrow" x="1136" y="5"/>
+    <line x1="360" y1="-5" x2="360" y2="15" class="tick"/><text x="350" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">0</tspan></text><line x1="1128" y1="-5" x2="1128" y2="15" class="tick"/><text x="1118" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">1</tspan></text>
+    <use href="#run-small" x="470" y="40"/><rect x="521" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="582" y="40"/><rect x="633" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="820" y="40"/><rect x="871" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="1006" y="40"/><rect x="1057" y="70" width="58" height="9" rx="2" class="adc"/>
+  </g>
+
+  <!-- E -->
+  <g transform="translate(0 763)">
+    <text x="52" y="8" class="letter">E</text><text x="86" y="8" class="zh head">仅限可见时段</text><text x="86" y="32" class="zh body">按随机种子可复现地选取</text>
+    <line x1="360" y1="5" x2="470" y2="5" class="hidden"/><line x1="470" y1="5" x2="710" y2="5" class="visible"/><line x1="710" y1="5" x2="820" y2="5" class="hidden"/><line x1="820" y1="5" x2="1136" y2="5" class="visible"/><use href="#axis-arrow" x="1136" y="5"/>
+    <line x1="360" y1="-5" x2="360" y2="15" class="tick"/><text x="350" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">0</tspan></text><line x1="1128" y1="-5" x2="1128" y2="15" class="tick"/><text x="1118" y="31" class="math body">T<tspan baseline-shift="sub" font-size="11">1</tspan></text>
+    <use href="#run-small" x="510" y="40"/><rect x="561" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="848" y="40"/><rect x="899" y="70" width="58" height="9" rx="2" class="adc"/><use href="#run-small" x="997" y="40"/><rect x="1048" y="70" width="58" height="9" rx="2" class="adc"/>
+  </g>
+
+  <line x1="52" y1="866" x2="1148" y2="866" class="sep"/>
+  <text x="52" y="895" class="zh small">注：图中长度仅表达组成、先后关系和选取规则，不按真实秒数比例绘制。</text>
+  <text x="52" y="920" class="zh small">允许非可见时段时，红色区间仍可参与选时；仅限可见时段时，完整的深蓝加浅蓝调度区间必须落在绿色区间内。</text>
+  <text x="52" y="945" class="zh small">每个 Run 均有独立的紫色 Run 级连续 ADC 窗；其位置只能在逐脉冲光行时求解后确定。</text>
+</svg>

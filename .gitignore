@@ -1,6 +1,7 @@
 outputs/
 runs/
 tmp/
+.tmp_*/
 __pycache__/
 .ipynb_checkpoints/
 *.npz
@@ -9,9 +10,9 @@ __pycache__/
 .claude/
 CLAUDE.md
 .vscode/
-tests/
 .pytest_cache/
 .cursor/
 /docs/_not_for_commit/
-pytest.ini
 notebooks/
+AGENTS.md
+configs/
