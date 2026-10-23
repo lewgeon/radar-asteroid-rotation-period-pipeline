@@ -8,7 +8,7 @@ from .qt_compat import QStyleFactory, Qt
 GUI_STYLE = """
 QWidget { font-family: "Microsoft YaHei", "Segoe UI"; font-size: 13px; color: #25354a; }
 QMainWindow { background: #f3f5f8; }
-QFrame#toolbarPanel, QFrame#workPanel {
+QFrame#toolbarPanel, QFrame#workPanel, QFrame#resultPopup {
     background: white; border: 1px solid #dce2eb; border-radius: 10px;
 }
 QLabel#panelTitle, QLabel#sectionTitle {
@@ -43,7 +43,7 @@ QLabel#scheduleFeedbackDetail { color: #60738c; font-size: 11px; }
 QLabel#rangeGateReadout { color: #60738c; font-size: 12px; background: transparent; border: none; padding: 0; }
 QLabel#configPathDisplay { color: #667789; background: #f2f4f7; border: none;
     border-radius: 5px; padding: 0 8px; min-height: 30px; }
-QLineEdit, QComboBox { background: white; border: 1px solid #cbd5e1;
+QLineEdit, QComboBox, QSpinBox { background: white; border: 1px solid #cbd5e1;
     border-radius: 5px; padding: 0 8px; min-height: 30px; selection-background-color: #d9e9fb; }
 QLineEdit:focus, QComboBox:focus { border-color: #3979bf; }
 QWidget#unitValue[focused="true"] { border-color: #3979bf; }
@@ -69,18 +69,11 @@ QPushButton:hover { background: #edf4fc; border-color: #92b4da; }
 QPushButton:disabled { color: #94a3b8; background: #f1f4f8; }
 QPushButton#runButton { background: #2868ab; color: white; border-color: #2868ab; font-weight: 600; }
 QPushButton#runButton:disabled { background: #a7bfd9; border-color: #a7bfd9; }
-QPushButton#previewButton {
-    background: #e8edf3; color: #94a3b8; border: 1px solid #cbd5e1; font-weight: 600;
-}
-QPushButton#previewButton:disabled { background: #eef2f6; color: #b0bac7; border-color: #d8dee7; }
-QPushButton#previewButton[previewReady="true"] {
-    background: #eff6ff; color: #1d4f91; border: 2px solid #3b82f6;
-    font-weight: 700;
-}
-QPushButton#previewButton[previewReady="true"]:hover {
-    background: #dbeafe; border-color: #2563eb;
-}
 QPushButton[activeStage="true"] { background: #e7f0fb; border-color: #9dbfe5; color: #215b99; font-weight: 600; }
+QLabel#panelHint[statusKind="ran"] { color: #177245; }
+QLabel#panelHint[statusKind="stale"] {
+    color: #8a4b00; font-weight: 700; background: #fff3d6; border-radius: 3px; padding: 1px 4px;
+}
 QTextEdit { background: white; border: 1px solid #dce2eb; border-radius: 4px; }
 QProgressBar { border: 1px solid #d4dce5; background: #edf1f5; border-radius: 4px;
     text-align: center; min-height: 22px; }

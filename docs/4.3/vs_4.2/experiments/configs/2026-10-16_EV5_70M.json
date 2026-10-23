@@ -1,0 +1,109 @@
+{
+  "observation": {
+    "target": {
+      "id": "99942",
+      "name": "Apophis",
+      "state": "horizons_vectors",
+      "object_type": "smallbody",
+      "extent_path_m": 300.0
+    },
+    "transmitter": {
+      "name": "transmitter",
+      "state": "astropy_geodetic",
+      "lat_deg": 29.5,
+      "lon_deg": 107.0,
+      "height_m": 511.0
+    },
+    "transmit": {
+      "prf_hz": 100.0,
+      "pulse_width_s": 4.9999999999999996e-05
+    },
+    "schedule": {
+      "start_utc": "2029-04-10T00:00:00Z",
+      "end_utc": "2029-04-12T00:00:00Z",
+      "selection": "equal_visible_time",
+      "run_count": 100,
+      "run_duration_s": 2.0
+    },
+    "radar_system": {
+      "mode": "monostatic_switching",
+      "switch_time_s": 0.2,
+      "safety_margin_s": 0.2
+    },
+    "receiver_sampling": {
+      "fast_sample_rate_hz": 200000000.0
+    },
+    "ephemeris": {
+      "query_step_s": 60.0
+    },
+    "visibility": {
+      "sample_step_s": 30.0,
+      "allow_unobservable_for_simulation": false,
+      "min_tx_elevation_deg": 0.0,
+      "min_rx_elevation_deg": 0.0
+    }
+  },
+  "echo": {
+    "scattering_model": "mesh",
+    "facet_chunk_size": 1280,
+    "fast_sample_chunk_size": 1024,
+    "pulse_batch_size": 32,
+    "seed": 20250729,
+    "echo_output_reference": "centroid_compensated",
+    "intrapulse_motion_model": "per_pulse_linear",
+    "compute": {
+      "device": "auto",
+      "dtype": "float32"
+    },
+    "radar": {
+      "carrier_frequency_hz": 1000000000.0
+    },
+    "waveform": {
+      "type": "chirp_pulse_train",
+      "bandwidth_hz": 150000000.0,
+      "amplitude": 1.0,
+      "baseband_convention": "centered"
+    },
+    "snr_db": null,
+    "model_path": "D:\\Documents\\rotation-period-measurement\\assets\\ev5_snr_20261016\\ev5_centered_70m.obj",
+    "target": {
+      "rotation_period_s": 10800.0,
+      "initial_phase_deg": 0.0,
+      "spin_pole_frame": "equatorial",
+      "spin_pole_icrs_deg": [
+        105.0,
+        -66.0
+      ]
+    },
+    "scattering_power": [
+      1.0,
+      1.0
+    ],
+    "scattering_spot": {
+      "enabled": false,
+      "direction_body": [
+        0.9600307214746386,
+        0.24000768036865966,
+        0.1440046082211958
+      ],
+      "radius_deg": 28.0,
+      "strength": 5.0
+    }
+  },
+  "inversion": {
+    "period_min_s": 1800.0,
+    "period_max_s": 14400.0,
+    "period_grid_size": 4000,
+    "cpi_duration_s": 1.0,
+    "motion_compensation": "auto",
+    "period_time_role": "scatter_centroid",
+    "los_phase_compensation": false,
+    "multi_harmonic_enabled": false,
+    "refine_period": true,
+    "compare_methods": false,
+    "doppler_estimator": "spectral_moments",
+    "period_selection": "predictive_joint",
+    "compute_device": "cuda:0",
+    "uncertainty_method": "none"
+  }
+}

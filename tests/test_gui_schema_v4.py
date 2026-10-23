@@ -35,7 +35,7 @@ from rotation_gui.widgets.inputs import (
 )
 from rotation_gui.window import main as main_module
 from rotation_gui.window.main import PipelineWindow
-from rotation_gui.window.parameter_form import ScheduleFeedbackWidget
+from rotation_gui.window.parameter_form import ParameterForm, ScheduleFeedbackWidget
 from observation.src.campaign_planning import resolve_campaign_run_plan
 
 
@@ -86,7 +86,7 @@ def _record_stage_success(run_dir: Path, config: dict, config_path, stage: str) 
             config, config_path=config_path, run_dir=run_dir, through_stage="echo"
         )
         observation_sha = (
-            pipeline.file_sha256(prepared["observation_output"])
+            pipeline.artifact_identity(prepared["observation_output"])
             if Path(prepared["observation_output"]).exists()
             else None
         )
@@ -1083,7 +1083,7 @@ class GuiSchemaV4Tests(unittest.TestCase):
                     ),
                     output_path=run_dir / "observation_info.npz",
                 )
-                observation_sha = pipeline.file_sha256(run_dir / "observation_info.npz")
+                observation_sha = pipeline.artifact_identity(run_dir / "observation_info.npz")
                 echo_proj = pipeline.echo_dependency_projection(
                     prepared["echo"],
                     observation_sha,
@@ -1414,6 +1414,42 @@ class GuiSchemaV4Tests(unittest.TestCase):
                 )
         finally:
             self._close_window(window)
+
+    def test_target_id_box_stores_bare_number_as_text(self):
+        from observation.src.config_normalize import normalize_observation_config
+
+        config = json.loads(
+            (storage.ROOT / "configs" / "paras_for_70m_3h.json").read_text(encoding="utf-8")
+        )
+        # Exercise a numeric legacy draft independently of the user's current
+        # configuration (which may already store the corrected string ID).
+        config["observation"]["target"]["id"] = 99942
+        with self.assertRaisesRegex(ValueError, r"observation\.target\.id 必须是非空字符串"):
+            normalize_observation_config(config["observation"])
+
+        form = ParameterForm()
+        try:
+            form.render(config, "observation", monostatic=True)
+            self.app.processEvents()
+            editor = form.field_widgets["observation.target.id"]
+            name = form.field_widgets["observation.target.name"]
+            self.assertIsInstance(editor, QLineEdit)
+            self.assertEqual(editor.text(), "99942")
+
+            collected = form.collect(strip=False)
+            self.assertEqual(collected["observation"]["target"]["id"], "99942")
+            self.assertIsInstance(collected["observation"]["schedule"]["run_count"], int)
+
+            editor.setText("100433")
+            name.setText("433")
+            collected = form.collect(strip=False)
+            self.assertEqual(collected["observation"]["target"]["id"], "100433")
+            self.assertEqual(collected["observation"]["target"]["name"], 433)
+            normalize_observation_config(collected["observation"])
+        finally:
+            form.close()
+            form.deleteLater()
+            self.app.processEvents()
 
     def test_target_state_roundtrip_preserves_numeric_vector_and_drops_horizons_id(self):
         window = self._make_window()

@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -140,6 +141,24 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
+def artifact_identity(path):
+    """Cheap local identity, not a content digest or bit-integrity guarantee."""
+    path = Path(path).resolve()
+    if not path.exists():
+        return None
+    stat = path.stat()
+    return {"path": str(path), "size_bytes": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns}
+
+
+def npz_array_shape(path, name):
+    """Read the NPY header inside NPZ, without materializing the signal array."""
+    with zipfile.ZipFile(path) as archive, archive.open(name + ".npy") as stream:
+        version = np.lib.format.read_magic(stream)
+        shape, _fortran, _dtype = np.lib.format._read_array_header(stream, version)
+    return shape
+
+
 def require_stage_artifact(path, stage):
     """Reject missing, empty, or unloadable stage products before recording success."""
 
@@ -205,20 +224,18 @@ def validate_observation_echo_contract(observation_path, echo_path):
     ) as echo:
         if "iq" not in echo.files:
             raise ValueError(f"回波文件缺少 iq：{echo_path}")
-        iq = np.asarray(echo["iq"])
+        echo_shape = npz_array_shape(echo_path, "iq")
         echo_metadata = _npz_metadata(echo)
-        if iq.ndim == 1:
-            return {"layout": "cw", "pulse_count": int(iq.shape[0])}
-        if iq.ndim != 2:
-            raise ValueError(f"回波 iq 维数无效：{iq.ndim}")
+        if len(echo_shape) == 1:
+            return {"layout": "cw", "pulse_count": int(echo_shape[0])}
+        if len(echo_shape) != 2:
+            raise ValueError(f"回波 iq 维数无效：{len(echo_shape)}")
         if "valid_plan" not in observation.files:
             raise ValueError("chirp 观测产物缺少 valid_plan，无法核对回波行宽")
-        valid_plan = np.asarray(observation["valid_plan"], dtype=bool)
-        if valid_plan.ndim != 2:
+        observation_shape = npz_array_shape(observation_path, "valid_plan")
+        if len(observation_shape) != 2:
             raise ValueError("chirp 观测产物 valid_plan 必须是二维数组")
 
-        observation_shape = tuple(map(int, valid_plan.shape))
-        echo_shape = tuple(map(int, iq.shape))
         if observation_shape[0] != echo_shape[0]:
             raise ValueError(
                 f"观测计划为 {observation_shape[0]} 个脉冲，回波为 {echo_shape[0]} 个脉冲；"
@@ -261,12 +278,11 @@ def validate_observation_echo_contract(observation_path, echo_path):
             ):
                 raise ValueError("观测计划与回波的 row_start_sample 不一致")
 
-        source_hash = echo_metadata.get("observation_info_sha256")
-        if source_hash is not None:
-            actual_hash = file_sha256(observation_path)
-            if str(source_hash) != actual_hash:
+        source_identity = echo_metadata.get("observation_info_identity")
+        if source_identity is not None:
+            if source_identity != artifact_identity(observation_path):
                 raise ValueError(
-                    "回波记录的 observation_info_sha256 与当前观测产物不一致；"
+                    "回波记录的 observation_info_identity 与当前观测产物不一致；"
                     "请重跑 echo"
                 )
         return {
@@ -338,7 +354,7 @@ def observation_dependency_projection(observation_config):
     }
 
 
-def echo_dependency_projection(echo_config, observation_sha256, *, config_path=None):
+def echo_dependency_projection(echo_config, observation_identity, *, config_path=None):
     from echo.src.config_normalize import normalize_echo_config, resolve_echo_input_paths
 
     projection = normalize_echo_config(echo_config)
@@ -347,7 +363,7 @@ def echo_dependency_projection(echo_config, observation_sha256, *, config_path=N
     projection, _warnings = resolve_echo_input_paths(projection, config_path=config_path)
     return {
         "echo": projection,
-        "observation_info_sha256": observation_sha256,
+        "observation_info_identity": observation_identity,
         "artifact_contract_version": ECHO_ARTIFACT_CONTRACT_VERSION,
     }
 
@@ -389,18 +405,28 @@ def load_stage_manifest(run_dir):
     return payload if isinstance(payload, dict) else {}
 
 
-def write_stage_success(run_dir, stage, *, fingerprint, projection, output_path):
+def write_stage_success(run_dir, stage, *, fingerprint, projection, output_path, contract_version=None):
     require_stage_artifact(output_path, stage)
+    if contract_version is None:
+        contract_version = (
+            OBSERVATION_ARTIFACT_CONTRACT_VERSION
+            if stage == "observation"
+            else ECHO_ARTIFACT_CONTRACT_VERSION
+        )
     manifest = load_stage_manifest(run_dir)
+    # A freshly produced upstream supersedes every downstream record, even
+    # when historical records lack the new local file identity.
+    for downstream in ({"observation": ("echo", "inversion"),
+                        "echo": ("inversion",)}.get(stage, ())):
+        manifest[downstream] = {**(manifest.get(downstream) or {}),
+                                "invalidated_by": stage}
     manifest[stage] = {
         "fingerprint": fingerprint,
         "projection": projection,
-        "output_sha256": file_sha256(output_path) if Path(output_path).exists() else None,
+        "output_identity": artifact_identity(output_path),
         "output_path": str(output_path),
         "created_utc": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-        "artifact_contract_version": (
-            OBSERVATION_ARTIFACT_CONTRACT_VERSION if stage == "observation" else ECHO_ARTIFACT_CONTRACT_VERSION
-        ),
+        "artifact_contract_version": contract_version,
     }
     write_json(Path(run_dir) / STAGE_MANIFEST_NAME, manifest)
     return manifest
@@ -433,31 +459,18 @@ def check_reusable_artifact(prepared, *, artifact_stage, allow_legacy=False):
         return ReuseDecision(False, reason=str(exc))
 
     recorded = load_stage_manifest(run_dir).get(artifact_stage) or {}
+    if recorded.get("invalidated_by"):
+        return ReuseDecision(False, reason=f"{label}上游已重新生成，请重跑该阶段")
     recorded_fp = recorded.get("fingerprint")
-    recorded_hash = recorded.get("output_sha256")
-    artifact_hash = file_sha256(artifact_path)
+    recorded_identity = recorded.get("output_identity")
+    if recorded_identity is not None and recorded_identity != artifact_identity(artifact_path):
+        return ReuseDecision(False, reason=f"{label}文件身份已变化，请重跑该阶段")
     if recorded_fp and not current_fp:
         return ReuseDecision(
             False,
             reason=f"当前配置无法计算{label}指纹，不能与已有产物核对，请补全该阶段参数或重跑上游",
         )
-    if recorded_fp and current_fp and recorded_fp == current_fp:
-        if not recorded_hash:
-            if allow_legacy:
-                return ReuseDecision(
-                    True,
-                    reason=f"按兼容开关复用缺少文件哈希的历史{label}",
-                )
-            return ReuseDecision(
-                False,
-                reason=f"{label}阶段记录缺少文件哈希；GUI 需确认，CLI 需 --allow-legacy-reuse",
-                requires_confirmation=True,
-            )
-        if recorded_hash != artifact_hash:
-            return ReuseDecision(
-                False,
-                reason=f"{label}文件哈希与阶段记录不一致，请重跑该阶段",
-            )
+    if recorded_fp and current_fp and stage_record_matches(prepared, artifact_stage, recorded):
         return ReuseDecision(True, reason=f"复用已有{label}")
     if recorded_fp and current_fp and recorded_fp != current_fp:
         if artifact_stage == "observation":
@@ -465,9 +478,7 @@ def check_reusable_artifact(prepared, *, artifact_stage, allow_legacy=False):
         else:
             current_proj = echo_dependency_projection(
                 prepared["echo"],
-                file_sha256(prepared["observation_output"])
-                if Path(prepared["observation_output"]).exists()
-                else None,
+                artifact_identity(prepared["observation_output"]),
                 config_path=prepared.get("config_path"),
             )
         mismatched = mapping_diff_paths(recorded.get("projection") or {}, current_proj) or [
@@ -494,6 +505,55 @@ def check_reusable_artifact(prepared, *, artifact_stage, allow_legacy=False):
         reason=f"{label}缺少可核对的阶段指纹；GUI 需确认，CLI 需 --allow-legacy-reuse",
         requires_confirmation=True,
     )
+
+
+def stage_record_matches(prepared, stage, recorded):
+    """Match current projections; old hash records are read without file hashing.
+
+    For legacy echo/inversion records compare saved parameters, and use the
+    recorded upstream stage parameters where available. Legacy file digests are
+    ignored; they cannot be converted to a stat identity without rereading data.
+    """
+    expected = prepared.get(stage + "_fingerprint")
+    if recorded.get("invalidated_by"):
+        return False
+    if not expected or not recorded.get("fingerprint"):
+        return False
+    manifest = load_stage_manifest(prepared["run_dir"])
+    if stage in {"echo", "inversion"}:
+        observation = manifest.get("observation") or {}
+        if observation.get("fingerprint") and observation["fingerprint"] != prepared.get("observation_fingerprint"):
+            return False
+    if stage == "inversion":
+        echo_record = manifest.get("echo") or {}
+        if echo_record.get("fingerprint") and not stage_record_matches(prepared, "echo", echo_record):
+            return False
+    if recorded["fingerprint"] == expected:
+        return True
+    projection = recorded.get("projection") or {}
+    if stage == "echo" and "observation_info_sha256" in projection:
+        current = echo_dependency_projection(prepared["echo"], None,
+                                             config_path=prepared.get("config_path"))
+        legacy = {k: v for k, v in projection.items() if k != "observation_info_sha256"}
+        current.pop("observation_info_identity")
+        upstream = load_stage_manifest(prepared["run_dir"]).get("observation") or {}
+        if upstream.get("fingerprint") and (not recorded.get("created_utc") or
+                upstream.get("created_utc", "") > recorded["created_utc"]):
+            return False
+        return legacy == current and (not upstream.get("fingerprint") or
+                                      upstream["fingerprint"] == prepared.get("observation_fingerprint"))
+    if stage == "inversion" and "echo_sha256" in projection:
+        config = copy.deepcopy(prepared["inversion"])
+        config.pop("output_path", None)
+        previous = copy.deepcopy(projection.get("inversion") or {})
+        previous.pop("output_path", None)
+        upstream = load_stage_manifest(prepared["run_dir"]).get("echo") or {}
+        if upstream.get("fingerprint") and (not recorded.get("created_utc") or
+                upstream.get("created_utc", "") > recorded["created_utc"]):
+            return False
+        return config == previous and (not upstream.get("fingerprint") or
+                                       stage_record_matches(prepared, "echo", upstream))
+    return False
 
 
 def prepare_run(config, *, config_path=None, run_dir, through_stage="full_pipeline"):
@@ -591,7 +651,14 @@ def prepare_run(config, *, config_path=None, run_dir, through_stage="full_pipeli
             observation_fp = canonical_fingerprint(observation_dependency_projection(observation))
         except (TypeError, ValueError):
             observation_fp = None
-    observation_sha = file_sha256(observation_output) if observation_output.exists() else None
+    observation_sha = artifact_identity(observation_output)
+    echo_artifact = echo_output_dir / "echo.npz"
+    echo_sha = artifact_identity(echo_artifact)
+    inversion_body = copy.deepcopy(inversion)
+    inversion_body.pop("output_path", None)
+    inversion_fp = canonical_fingerprint(
+        {"inversion": inversion_body, "echo_identity": echo_sha}
+    )
     echo_fp = None
     echo_config_path = str(Path(config_path).resolve()) if config_path else None
     if through_stage in {"echo", "full_pipeline"}:
@@ -624,6 +691,7 @@ def prepare_run(config, *, config_path=None, run_dir, through_stage="full_pipeli
         },
         "observation_fingerprint": observation_fp,
         "echo_fingerprint": echo_fp,
+        "inversion_fingerprint": inversion_fp,
         "config_path": str(Path(config_path).resolve()) if config_path else None,
         "run_dir": run_dir,
     }
@@ -1003,7 +1071,7 @@ def main():
             require_stage_artifact(echo_npz, "echo")
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
-        observation_sha = file_sha256(prepared["observation_output"])
+        observation_sha = artifact_identity(prepared["observation_output"])
         echo_proj = echo_dependency_projection(
             prepared["echo"],
             observation_sha,
@@ -1047,6 +1115,18 @@ def main():
     summary = Path(prepared["inversion_output_dir"]) / "summary.json"
     if not summary.exists():
         raise SystemExit("inversion 退出码为 0 但未生成 summary.json")
+    inversion_body = copy.deepcopy(prepared["inversion"])
+    inversion_body.pop("output_path", None)
+    inversion_projection = {"inversion": inversion_body,
+                            "echo_identity": artifact_identity(echo_artifact)}
+    write_stage_success(
+        run_dir,
+        "inversion",
+        fingerprint=canonical_fingerprint(inversion_projection),
+        projection=inversion_projection,
+        output_path=summary,
+        contract_version="inversion-1",
+    )
     write_json(run_dir / "manifest.json", build_manifest(prepared["snapshot"]))
 
     print("\n完成。")

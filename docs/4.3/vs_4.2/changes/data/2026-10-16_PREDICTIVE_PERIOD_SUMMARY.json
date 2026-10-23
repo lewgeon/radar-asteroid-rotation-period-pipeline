@@ -1,0 +1,128 @@
+{
+  "measured_utc": "2026-10-16T06:15:49.516430+00:00",
+  "legacy_policy": "feature_support_then_mean_fit_score_v2",
+  "predictive_policy": "median_whole_run_predictive_skill_v1",
+  "protocol": "30 default fixed seeds x three noise scales x target majority/minority; 10..30s full search; H1; five whole-Run folds; identical feature inputs for paired selection; truth only generator/final scorer; no confidence coverage claim",
+  "grid_size": 240,
+  "source_sha256": {
+    "scripts\\experiment_predictive_period.py": "330576e3ef0e7abd801cadcbb50f720b504510bb71e53fda2b15332593e1935d",
+    "inversion\\src\\joint_period.py": "58e2164e58354caca8bef78634ccbd366e9cbbbeeaa14464acb077e7052b4948",
+    "inversion\\src\\period_consensus.py": "0f7ccc5e5e0a7ab1e010bc9aa9cdd77ca0e142fb7b0d16f29745ec0e3053eeb2",
+    "inversion\\src\\inversion.py": "cfd4c0004d35bd1e52d454e0749e022f36d61d2f31ea598c4fc50ec68d1f7c87"
+  },
+  "summary": [
+    {
+      "target_channel_count": 3,
+      "noise_scale": 0.03,
+      "trials": 30,
+      "scope": "majority_target",
+      "legacy": {
+        "bias_s": -3.2170057879523046,
+        "rmse_s": 5.529122489042585,
+        "median_absolute_error_s": 3.118214920252985,
+        "errors_over_5_percent": 18
+      },
+      "predictive": {
+        "bias_s": 0.001659525012949222,
+        "rmse_s": 0.022146318704083016,
+        "median_absolute_error_s": 0.010307655839536523,
+        "errors_over_5_percent": 0
+      }
+    },
+    {
+      "target_channel_count": 3,
+      "noise_scale": 0.2,
+      "trials": 30,
+      "scope": "majority_target",
+      "legacy": {
+        "bias_s": -3.1081971641453134,
+        "rmse_s": 5.726065163801119,
+        "median_absolute_error_s": 1.4655986852721465,
+        "errors_over_5_percent": 16
+      },
+      "predictive": {
+        "bias_s": 0.012305062726710385,
+        "rmse_s": 0.03881954878968484,
+        "median_absolute_error_s": 0.026890878562513265,
+        "errors_over_5_percent": 0
+      }
+    },
+    {
+      "target_channel_count": 3,
+      "noise_scale": 0.6,
+      "trials": 30,
+      "scope": "majority_target",
+      "legacy": {
+        "bias_s": -3.714666534050066,
+        "rmse_s": 6.143191204465034,
+        "median_absolute_error_s": 1.4438473428989091,
+        "errors_over_5_percent": 16
+      },
+      "predictive": {
+        "bias_s": 0.039634346032750636,
+        "rmse_s": 0.12536787033552635,
+        "median_absolute_error_s": 0.06915348696696988,
+        "errors_over_5_percent": 0
+      }
+    },
+    {
+      "target_channel_count": 2,
+      "noise_scale": 0.03,
+      "trials": 30,
+      "scope": "negative_minority_target",
+      "legacy": {
+        "bias_s": -6.046097497159974,
+        "rmse_s": 7.608140119636254,
+        "median_absolute_error_s": 6.9165030759654424,
+        "errors_over_5_percent": 26
+      },
+      "predictive": {
+        "bias_s": -9.668341365103004,
+        "rmse_s": 9.94468776742011,
+        "median_absolute_error_s": 9.874511631643411,
+        "errors_over_5_percent": 30
+      }
+    },
+    {
+      "target_channel_count": 2,
+      "noise_scale": 0.2,
+      "trials": 30,
+      "scope": "negative_minority_target",
+      "legacy": {
+        "bias_s": -7.042601618206558,
+        "rmse_s": 8.143409449873033,
+        "median_absolute_error_s": 7.265076322294621,
+        "errors_over_5_percent": 27
+      },
+      "predictive": {
+        "bias_s": -9.668221339552396,
+        "rmse_s": 9.944168858160868,
+        "median_absolute_error_s": 9.87334050357766,
+        "errors_over_5_percent": 30
+      }
+    },
+    {
+      "target_channel_count": 2,
+      "noise_scale": 0.6,
+      "trials": 30,
+      "scope": "negative_minority_target",
+      "legacy": {
+        "bias_s": -8.244427841424377,
+        "rmse_s": 8.951864753130772,
+        "median_absolute_error_s": 8.746867101938257,
+        "errors_over_5_percent": 29
+      },
+      "predictive": {
+        "bias_s": -9.66761644186025,
+        "rmse_s": 9.943140903353335,
+        "median_absolute_error_s": 9.877387278821569,
+        "errors_over_5_percent": 30
+      }
+    }
+  ],
+  "raw_result_sha256": "4beca03a415d4972e755836db10fad409c3ca045b6e4c0ec65acb27cc3845537",
+  "paired_record_count": 180,
+  "source_note": "Frozen control-stage source hashes. Subsequent same-mask duplicate contract and fallback score-definition metadata do not change numeric scoring.",
+  "reproduction_command": "conda run -n pytorch python scripts/experiment_predictive_period.py --trials 30 --grid 240 --observables runs/seperate_observation_2/inversion/period_observables.npz --output tmp/predictive_period_reproduction",
+  "scope": "Synthetic features only; 90 majority-target and 90 negative minority-target controls; no confidence coverage or end-to-end physics claim."
+}

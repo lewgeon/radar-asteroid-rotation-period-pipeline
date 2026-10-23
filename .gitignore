@@ -1,6 +1,7 @@
 outputs/
 runs/
 tmp/
+tmp2/
 .tmp_*/
 __pycache__/
 .ipynb_checkpoints/
@@ -16,3 +17,11 @@ CLAUDE.md
 notebooks/
 AGENTS.md
 configs/
+# The GUI default and documented smoke command must work in a fresh clone.
+!configs/
+configs/*
+!configs/point_target_debug.json
+!configs/chirp_point_target_test.json
+# Frozen experiment configuration snapshots are documentation evidence.
+!docs/4.3/vs_4.2/experiments/configs/
+!docs/4.3/vs_4.2/experiments/configs/**

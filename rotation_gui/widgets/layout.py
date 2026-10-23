@@ -58,7 +58,7 @@ LANES_BY_STAGE = {
     ),
     "inversion": (
         ("spectrum",),
-        ("period_search",),
+        ("period_search", "period_enhancements"),
     ),
 }
 

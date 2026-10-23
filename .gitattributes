@@ -3,10 +3,43 @@
 # 不包含“这一版相对上一版改了什么、还剩什么问题”的过程材料。
 # 注意：.gitattributes 里命名目录的模式不会递归生效，必须写成 docs/4.2/vs_4.1/**。
 docs/4.2/vs_4.1/** export-ignore
+# Unmodified echo 4.2 manuals reference this historical implementation note.
+# Keep just that document and its parent directories available in archives.
+docs/4.2/vs_4.1/changes -export-ignore
+docs/4.2/vs_4.1/changes/ECHO_SIMULATION_PERFORMANCE_PHASE_C.md -export-ignore
 docs/4.3/vs_4.2/** export-ignore
+docs/4.4/vs_4.3/** export-ignore
+assets/ev5_snr_20261016/** export-ignore
+docs/4.3/images/peak_width_example_single_run.png export-ignore
+docs/4.3/images/range_features_* export-ignore
+
+# 当前手册/研究正文使用的图片随正文发行；仅开放所需父目录和具体文件。
+# 其余实验报告、配置、统计与配图仍按上面的过程材料规则排除。
+docs/4.3/vs_4.2/experiments -export-ignore
+docs/4.3/vs_4.2/experiments/figures -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-09_CHIRP_WALKTHROUGH -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-09_CHIRP_WALKTHROUGH/01_compensation.png -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-09_CHIRP_WALKTHROUGH/02_intrapulse.png -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-09_CHIRP_WALKTHROUGH/03_features_noise.png -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-11_OPTIONAL_PERIOD_PRECISION -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-11_OPTIONAL_PERIOD_PRECISION/refined_grid_errors.png -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-16_EV5_400M -export-ignore
+docs/4.3/vs_4.2/experiments/figures/2026-10-16_EV5_400M/period_error_vs_snr.png -export-ignore
+
+# 当前版本Markdown统一LF，避免Windows编辑器造成纯换行噪声。
+docs/4.3/**/*.md text eol=lf
+docs/4.4/**/*.md text eol=lf
+
+# Frozen scientific identities refer to exact original bytes, including EOLs.
+# Do not let core.autocrlf rewrite configuration snapshots, result data or meshes.
+docs/4.3/vs_4.2/experiments/configs/** -text
+docs/4.3/vs_4.2/experiments/data/** -text
+docs/4.3/vs_4.2/changes/data/** -text
+assets/ev5_snr_20261016/** -text
 
 # 发布归档不包含测试和用于跑测试的脚本。它们留在仓库里给 CI 和开发使用，
 # 不进入 git archive / GitHub source zip。子模块里面向用户的 scripts 不在此列。
 # 注意：命名目录的模式不会递归生效，必须写成 tests/**。
 tests/** export-ignore
 scripts/** export-ignore
+pytest.ini export-ignore

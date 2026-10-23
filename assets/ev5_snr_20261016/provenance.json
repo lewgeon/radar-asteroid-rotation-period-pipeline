@@ -1,0 +1,38 @@
+{
+  "source": "D:\\Documents\\mesh-editor\\meshes\\2008 EV5_70m.obj",
+  "source_sha256": "8954d21f6c84640d3cff745ef44408d71473fba54071a505846cbb9abcdc0bdf",
+  "center_mass_translation_m": [
+    -0.16608971776953557,
+    -0.2194970309462083,
+    -0.056791547791322596
+  ],
+  "assumed_density": "uniform; translation only; supplied +Z remains spin axis",
+  "source_maximum_extent_m": 70.0,
+  "source_volume_equivalent_diameter_m": 61.92737963903201,
+  "vertices": 2000,
+  "faces": 3996,
+  "derived": {
+    "70m": {
+      "path": "D:\\Documents\\rotation-period-measurement\\assets\\ev5_snr_20261016\\ev5_centered_70m.obj",
+      "scale": 1.0,
+      "extents_m": [
+        70.0,
+        67.9906470642,
+        61.7631506556
+      ],
+      "volume_equivalent_diameter_m": 61.92737963903201,
+      "sha256": "073e19e8712a9cb8278038e1a35c5eaedc9becb59c07b7ace61282acf896b3a8"
+    },
+    "400m": {
+      "path": "D:\\Documents\\rotation-period-measurement\\assets\\ev5_snr_20261016\\ev5_centered_400m.obj",
+      "scale": 6.4591785141169655,
+      "extents_m": [
+        452.1424959881876,
+        439.1637266779904,
+        398.9392156788207
+      ],
+      "volume_equivalent_diameter_m": 400.0,
+      "sha256": "e36ba06bb296854dd9e79a3ded2b4231db86070da62ea01715fb3f5b2fd197d0"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "archived_utc": "2026-10-16T08:43:43.378613+00:00",
+  "synchronous": {
+    "mode": "sync",
+    "handler_seconds": 2.8693837,
+    "first_event_pump_seconds": 2.8909212999999996,
+    "status_ready_seconds": 2.8909212999999996,
+    "source": "runs/seperate_observation_2/echo/echo.npz",
+    "scope": "cold status modules in separate processes; same local dataset and session, during Monte Carlo load"
+  },
+  "asynchronous": {
+    "mode": "async",
+    "handler_seconds": 0.019829299999999994,
+    "first_event_pump_seconds": 0.04647600000000002,
+    "status_ready_seconds": 2.9332181,
+    "source": "runs/seperate_observation_2/echo/echo.npz",
+    "scope": "cold status modules in separate processes; same local dataset and session, during Monte Carlo load"
+  },
+  "source_hashes": {
+    "rotation_gui/window/main.py": "337f83fb5b46ce52380eb4cbcf1903983ca8434a139b1ae072c418bba5eca80d",
+    "rotation_gui/window/result_service.py": "5e9e125e0f6d94af913c6cbe620831b446edeaf42c29a6e3859128b36b24121d",
+    "tests/test_result_popup_interaction.py": "35d5b17dc4aee76f5bf26cef862264e30cb594dd42670873f3ae8cb02438ae79",
+    "tmp/benchmark_result_popup_20261016.py": "5264a483b1a50aef9fa9e0aa7ee746fd465ab57010bbe7eb9637d9b5538d6bc6"
+  }
+}

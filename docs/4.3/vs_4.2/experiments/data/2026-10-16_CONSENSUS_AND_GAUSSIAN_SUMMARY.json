@@ -1,0 +1,332 @@
+{
+  "policy": "feature_support_then_mean_fit_score_v2",
+  "source_sha256": {
+    "scripts\\experiment_consensus_quality.py": "370fcc90a450cdf10b030f3626f8c5c7c77c0ae16290b098e00080d432d2983a",
+    "scripts\\experiment_period_uncertainty.py": "4f44c1c4dd9bb7b06b566ebd543010086a54967cc77e910d89413e31d4ca331e",
+    "inversion\\src\\period_consensus.py": "0f7ccc5e5e0a7ab1e010bc9aa9cdd77ca0e142fb7b0d16f29745ec0e3053eeb2",
+    "inversion\\src\\period_uncertainty.py": "86de1f2c1187d5bef6698e611789703d619da94779169de9f6e0f66106ff4b92"
+  },
+  "before": {
+    "measured_utc": "2026-10-16T03:11:49.622285+00:00",
+    "seconds": 224.102429,
+    "config": {
+      "period_min_s": 18.0,
+      "period_max_s": 22.0,
+      "period_grid_size": 120,
+      "harmonics": 1,
+      "refine_period": true,
+      "uncertainty_method": "run_bootstrap",
+      "uncertainty_replicates": 30,
+      "uncertainty_seed": 20261015,
+      "cpi_duration_s": 0.8,
+      "cpi_hop_duration_s": 0.4,
+      "motion_compensation": "centroid_geometry"
+    },
+    "protocol": "predeclared 20s truth for scoring only; 18..22 search; 40 Runs x3 correlated observations; H1 correct/misspecified; receiver control30Runs x16pulses x80samples uses full frontend, five features, search and consensus; fixed seeds",
+    "limitation": "controls only; not real asteroid geometry/noise coverage; too few trials to calibrate99.73%; no final3sigma guarantee",
+    "summary": {
+      "correct_waveform": {
+        "trials": 200,
+        "bias_s": -1.9852661634719952,
+        "rmse_s": 1.985313683526599,
+        "bootstrap95_available": 200,
+        "bootstrap95_coverage": 0.0,
+        "bootstrap95_coverage_wilson95": [
+          0.0,
+          0.018845326377265555
+        ],
+        "range_centroid_local3sigma_available": 200,
+        "range_centroid_local3sigma_coverage": 0.99,
+        "range_centroid_bootstrap95_available": 200,
+        "range_centroid_bootstrap95_coverage": 0.865
+      },
+      "receiver_to_full_consensus": {
+        "trials": 32,
+        "bias_s": -1.9776238463943858,
+        "rmse_s": 1.9776530591064632,
+        "bootstrap95_available": 32,
+        "bootstrap95_coverage": 0.0,
+        "bootstrap95_coverage_wilson95": [
+          0.0,
+          0.10717919825506533
+        ],
+        "range_centroid_local3sigma_available": 32,
+        "range_centroid_local3sigma_coverage": 1.0,
+        "range_centroid_bootstrap95_available": 32,
+        "range_centroid_bootstrap95_coverage": 1.0
+      },
+      "unmodeled_harmonic": {
+        "trials": 200,
+        "bias_s": -1.9847393136708553,
+        "rmse_s": 1.9847863833052148,
+        "bootstrap95_available": 200,
+        "bootstrap95_coverage": 0.0,
+        "bootstrap95_coverage_wilson95": [
+          0.0,
+          0.018845326377265555
+        ],
+        "range_centroid_local3sigma_available": 200,
+        "range_centroid_local3sigma_coverage": 0.99,
+        "range_centroid_bootstrap95_available": 200,
+        "range_centroid_bootstrap95_coverage": 0.895
+      }
+    }
+  },
+  "after": {
+    "measured_utc": "2026-10-16T03:15:05.169992+00:00",
+    "seconds": 195.5381802,
+    "config": {
+      "period_min_s": 18.0,
+      "period_max_s": 22.0,
+      "period_grid_size": 120,
+      "harmonics": 1,
+      "refine_period": true,
+      "uncertainty_method": "run_bootstrap",
+      "uncertainty_replicates": 30,
+      "uncertainty_seed": 20261015,
+      "cpi_duration_s": 0.8,
+      "cpi_hop_duration_s": 0.4,
+      "motion_compensation": "centroid_geometry"
+    },
+    "protocol": "predeclared 20s truth for scoring only; 18..22 search; 40 Runs x3 correlated observations; H1 correct/misspecified; receiver control30Runs x16pulses x80samples uses full frontend, five features, search and consensus; fixed seeds",
+    "limitation": "controls only; not real asteroid geometry/noise coverage; too few trials to calibrate99.73%; no final3sigma guarantee",
+    "summary": {
+      "correct_waveform": {
+        "trials": 200,
+        "bias_s": -0.003814370075103479,
+        "rmse_s": 0.04591420470960638,
+        "bootstrap95_available": 200,
+        "bootstrap95_coverage": 0.865,
+        "bootstrap95_coverage_wilson95": [
+          0.8107086162924761,
+          0.9055342954521199
+        ],
+        "range_centroid_local3sigma_available": 200,
+        "range_centroid_local3sigma_coverage": 0.99,
+        "range_centroid_bootstrap95_available": 200,
+        "range_centroid_bootstrap95_coverage": 0.865
+      },
+      "receiver_to_full_consensus": {
+        "trials": 32,
+        "bias_s": 0.007685861642474867,
+        "rmse_s": 0.022284742776291878,
+        "bootstrap95_available": 31,
+        "bootstrap95_coverage": 1.0,
+        "bootstrap95_coverage_wilson95": [
+          0.8897446045395695,
+          1.0
+        ],
+        "range_centroid_local3sigma_available": 32,
+        "range_centroid_local3sigma_coverage": 1.0,
+        "range_centroid_bootstrap95_available": 32,
+        "range_centroid_bootstrap95_coverage": 1.0
+      },
+      "unmodeled_harmonic": {
+        "trials": 200,
+        "bias_s": 0.012580067332499372,
+        "rmse_s": 0.1135541855359924,
+        "bootstrap95_available": 200,
+        "bootstrap95_coverage": 0.895,
+        "bootstrap95_coverage_wilson95": [
+          0.8448196800887713,
+          0.9302925120731891
+        ],
+        "range_centroid_local3sigma_available": 200,
+        "range_centroid_local3sigma_coverage": 0.99,
+        "range_centroid_bootstrap95_available": 200,
+        "range_centroid_bootstrap95_coverage": 0.895
+      }
+    }
+  },
+  "saved_feature_evaluation": {
+    "enabled": true,
+    "status": "experimental_coverage_unvalidated",
+    "method": "whole_Run_pairs_bootstrap_full_search_and_existing_consensus",
+    "consensus_policy": "feature_support_then_mean_fit_score_v2",
+    "scope": "保存特征条件下的Run采样敏感性；未重算IQ噪声、几何及前端，非最终总误差保证",
+    "seed": 20261015,
+    "replicates": 100,
+    "run_count": 100,
+    "baseline_consensus_period_s": 5748.4650576421645,
+    "local_features": {
+      "total_power": {
+        "status": "conditional_unvalidated",
+        "period_s": 5398.349376982603,
+        "sigma_s": 8.325872096563184,
+        "conditional_3sigma_interval_s": [
+          5373.371760692913,
+          5423.326993272292
+        ],
+        "run_count": 100,
+        "valid_observations": 500,
+        "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+        "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+      },
+      "doppler_centroid": {
+        "status": "conditional_unvalidated",
+        "period_s": 5427.837155233402,
+        "sigma_s": 14.352946094075943,
+        "conditional_3sigma_interval_s": [
+          5384.778316951174,
+          5470.89599351563
+        ],
+        "run_count": 100,
+        "valid_observations": 500,
+        "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+        "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+      },
+      "doppler_bandwidth": {
+        "status": "conditional_unvalidated",
+        "period_s": 4817.283998359766,
+        "sigma_s": 18.191405489699434,
+        "conditional_3sigma_interval_s": [
+          4762.709781890668,
+          4871.858214828864
+        ],
+        "run_count": 100,
+        "valid_observations": 500,
+        "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+        "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+      },
+      "range_centroid": {
+        "status": "conditional_unvalidated",
+        "period_s": 5400.633727940934,
+        "sigma_s": 3.9638972883203545,
+        "conditional_3sigma_interval_s": [
+          5388.7420360759725,
+          5412.525419805895
+        ],
+        "run_count": 100,
+        "valid_observations": 500,
+        "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+        "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+      },
+      "range_energy_width": {
+        "status": "conditional_unvalidated",
+        "period_s": 5398.4847481006855,
+        "sigma_s": 7.968459446661589,
+        "conditional_3sigma_interval_s": [
+          5374.5793697607005,
+          5422.39012644067
+        ],
+        "run_count": 100,
+        "valid_observations": 500,
+        "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+        "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+      }
+    },
+    "bootstrap_failure_fraction": 0.0,
+    "within_5_percent_of_baseline_fraction": 0.3,
+    "consensus_empirical_quantiles_025_050_975_s": [
+      5082.920006210644,
+      5404.6682328140305,
+      5764.41235060427
+    ],
+    "conditional_same_mode_95_interval_s": null,
+    "coverage_calibrated": false,
+    "final_3sigma_interval_s": null,
+    "warning": "95%经验分位不是已验证覆盖区间；可能跨别名峰。Run非交换、跨Run相关、偏差或模型错误时须另行验证；未输出最终3σ。",
+    "source": {
+      "path": "D:\\Documents\\rotation-period-measurement\\runs\\seperate_observation_2\\inversion\\period_observables.npz",
+      "size_bytes": 23244,
+      "mtime_ns": 1792036028872121600
+    },
+    "measured_utc": "2026-10-16T03:13:29.249511+00:00",
+    "seconds": 144.80791820000002,
+    "config": {
+      "period_min_s": 1800.0,
+      "period_max_s": 14400.0,
+      "period_grid_size": 4000,
+      "cpi_duration_s": 1.0,
+      "motion_compensation": "auto",
+      "period_time_role": "scatter_centroid",
+      "los_phase_compensation": false,
+      "multi_harmonic_enabled": false,
+      "refine_period": true,
+      "compare_methods": false,
+      "doppler_estimator": "spectral_moments",
+      "uncertainty_method": "run_bootstrap",
+      "uncertainty_replicates": 100,
+      "uncertainty_seed": 20261015
+    }
+  },
+  "gaussian_controls": {
+    "measured_utc": "2026-10-16T03:14:52.768003+00:00",
+    "records": [
+      {
+        "schedule": "regular",
+        "requested_failure_probability": 0.05,
+        "outer_intervals_s": [
+          [
+            7.109375,
+            7.5
+          ],
+          [
+            8.2421875,
+            8.59375
+          ]
+        ],
+        "conditional_error_bound_s": 1.2837500000000004,
+        "truth_in_cover": true,
+        "declared_noise_event_observed": true,
+        "status": "conditional_outer_cover",
+        "k_sigma": 4
+      },
+      {
+        "schedule": "regular",
+        "requested_failure_probability": 0.0027,
+        "outer_intervals_s": [
+          [
+            7.109375,
+            7.5
+          ],
+          [
+            8.2421875,
+            8.59375
+          ]
+        ],
+        "conditional_error_bound_s": 1.2837500000000004,
+        "truth_in_cover": true,
+        "declared_noise_event_observed": true,
+        "status": "conditional_outer_cover",
+        "k_sigma": 5
+      },
+      {
+        "schedule": "irregular",
+        "requested_failure_probability": 0.05,
+        "outer_intervals_s": [
+          [
+            7.1484375,
+            7.421875
+          ]
+        ],
+        "conditional_error_bound_s": 0.1615624999999996,
+        "truth_in_cover": true,
+        "declared_noise_event_observed": true,
+        "status": "conditional_outer_cover",
+        "k_sigma": 4
+      },
+      {
+        "schedule": "irregular",
+        "requested_failure_probability": 0.0027,
+        "outer_intervals_s": [
+          [
+            7.1484375,
+            7.421875
+          ]
+        ],
+        "conditional_error_bound_s": 0.1615624999999996,
+        "truth_in_cover": true,
+        "declared_noise_event_observed": true,
+        "status": "conditional_outer_cover",
+        "k_sigma": 5
+      }
+    ],
+    "scope": "Four declared feature-model cases; not empirical coverage calibration or physical IQ propagation",
+    "source_sha256": {
+      "scripts\\experiment_gaussian_period.py": "9a5c6926c65728f8cd93248d208b63329ec0098f14995159c241d60689007fb1",
+      "inversion\\src\\gaussian_period.py": "5e1ea66226c3ab59acbb79a957f1bfb8a9454bd3b6616b37b273b7e38b43c346",
+      "inversion\\src\\bounded_period.py": "19831d8ac7a164f979040d0d12fad9648dd42721bee0feeb7f4c51d5cf9b7875"
+    }
+  }
+}

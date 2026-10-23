@@ -1,0 +1,318 @@
+{
+  "enabled": true,
+  "status": "experimental_coverage_unvalidated",
+  "method": "whole_Run_pairs_bootstrap_full_search_and_current_consensus",
+  "consensus_policy": "feature_support_then_mean_fit_score_v2",
+  "scope": "保存特征条件下的Run采样敏感性；未重算IQ噪声、几何及前端，非最终总误差保证",
+  "seed": 20261015,
+  "replicates": 100,
+  "run_count": 100,
+  "baseline_consensus_period_s": 5398.4847481006855,
+  "local_features": {
+    "total_power": {
+      "status": "conditional_unvalidated",
+      "period_s": 5398.349376982603,
+      "sigma_s": 8.325872096563184,
+      "conditional_3sigma_interval_s": [
+        5373.371760692913,
+        5423.326993272292
+      ],
+      "run_count": 100,
+      "valid_observations": 500,
+      "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+      "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+    },
+    "range_centroid": {
+      "status": "conditional_unvalidated",
+      "period_s": 5400.633727940934,
+      "sigma_s": 3.9638972883203545,
+      "conditional_3sigma_interval_s": [
+        5388.7420360759725,
+        5412.525419805895
+      ],
+      "run_count": 100,
+      "valid_observations": 500,
+      "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+      "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+    },
+    "range_energy_width": {
+      "status": "conditional_unvalidated",
+      "period_s": 5398.4847481006855,
+      "sigma_s": 7.968459446661589,
+      "conditional_3sigma_interval_s": [
+        5374.5793697607005,
+        5422.39012644067
+      ],
+      "run_count": 100,
+      "valid_observations": 500,
+      "covariance_method": "CR1_run_cluster_sandwich_local_linearization",
+      "assumptions": "正确周期峰和波形模型；Run间独立、足量、局部近似；系统偏差未计入；未验证99.73%覆盖"
+    }
+  },
+  "bootstrap_failure_fraction": 0.0,
+  "within_5_percent_of_baseline_fraction": 1.0,
+  "consensus_empirical_quantiles_025_050_975_s": [
+    5387.6650168744,
+    5399.67572118053,
+    5411.011222422722
+  ],
+  "conditional_same_mode_95_interval_s": [
+    5387.6650168744,
+    5411.011222422722
+  ],
+  "coverage_calibrated": false,
+  "final_3sigma_interval_s": null,
+  "warning": "95%经验分位不是已验证覆盖区间；可能跨别名峰。Run非交换、跨Run相关、偏差或模型错误时须另行验证；未输出最终3σ。",
+  "source": {
+    "path": "D:\\Documents\\rotation-period-measurement\\runs\\seperate_observation_2\\inversion\\period_observables.npz",
+    "size_bytes": 23244,
+    "mtime_ns": 1792036028872121600
+  },
+  "measured_utc": "2026-10-16T03:52:23.745734+00:00",
+  "seconds": 25.7440239,
+  "config": {
+    "period_min_s": 1800.0,
+    "period_max_s": 14400.0,
+    "period_grid_size": 4000,
+    "cpi_duration_s": 1.0,
+    "motion_compensation": "auto",
+    "period_time_role": "scatter_centroid",
+    "los_phase_compensation": false,
+    "multi_harmonic_enabled": false,
+    "refine_period": true,
+    "compare_methods": false,
+    "doppler_estimator": "spectral_moments",
+    "uncertainty_method": "run_bootstrap",
+    "uncertainty_replicates": 100,
+    "uncertainty_seed": 20261015,
+    "compute_device": "cuda:0"
+  },
+  "experiment_feature_set": "range",
+  "feature_candidates": {
+    "total_power": {
+      "best_period_s": 5398.349376982603,
+      "candidates": [
+        {
+          "period_s": 5398.349376982603,
+          "score": 0.5528777308524535,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 5091.9230370536525,
+          "score": 0.3992557344136798,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 5748.4650576421645,
+          "score": 0.3065366728730776,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 4830.29990676404,
+          "score": 0.07190472258710956,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 2622.758091736952,
+          "score": 0.058792559219249974,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 2699.1746884913014,
+          "score": 0.5528777308524535,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 10796.698753965205,
+          "score": 0.5528777308524535,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2545.9615185268262,
+          "score": 0.3992557344136798,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 10183.846074107305,
+          "score": 0.3992557344136798,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2874.2325288210823,
+          "score": 0.3065366728730776,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 11496.930115284329,
+          "score": 0.3065366728730776,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2415.14995338202,
+          "score": 0.07190472258710956,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 9660.59981352808,
+          "score": 0.07190472258710956,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 5245.516183473904,
+          "score": 0.058792559219249974,
+          "source": "multi_harmonic_ls:H=1:double"
+        }
+      ]
+    },
+    "range_centroid": {
+      "best_period_s": 5400.633727940934,
+      "candidates": [
+        {
+          "period_s": 5400.633727940934,
+          "score": 0.8802986404752396,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 5735.692427878769,
+          "score": 0.5567321322991514,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 5102.41331594065,
+          "score": 0.5145623330249558,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 6086.078312065027,
+          "score": 0.07650808060537939,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 4853.2153117396165,
+          "score": 0.06362592738085815,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 2700.316863970467,
+          "score": 0.8802986404752396,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 10801.267455881867,
+          "score": 0.8802986404752396,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2867.8462139393846,
+          "score": 0.5567321322991514,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 11471.384855757538,
+          "score": 0.5567321322991514,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2551.206657970325,
+          "score": 0.5145623330249558,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 10204.8266318813,
+          "score": 0.5145623330249558,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 3043.0391560325133,
+          "score": 0.07650808060537939,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 12172.156624130053,
+          "score": 0.07650808060537939,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2426.6076558698082,
+          "score": 0.06362592738085815,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 9706.430623479233,
+          "score": 0.06362592738085815,
+          "source": "multi_harmonic_ls:H=1:double"
+        }
+      ]
+    },
+    "range_energy_width": {
+      "best_period_s": 5398.4847481006855,
+      "candidates": [
+        {
+          "period_s": 5398.4847481006855,
+          "score": 0.6163273737534832,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 5743.689654470714,
+          "score": 0.40860212014133657,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 5091.504149983333,
+          "score": 0.3271137980383949,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 2701.158210744417,
+          "score": 0.16280161612033528,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 2623.490111048865,
+          "score": 0.12388618852859012,
+          "source": "multi_harmonic_ls:H=1"
+        },
+        {
+          "period_s": 2699.2423740503427,
+          "score": 0.6163273737534832,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 10796.969496201371,
+          "score": 0.6163273737534832,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2871.844827235357,
+          "score": 0.40860212014133657,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 11487.379308941428,
+          "score": 0.40860212014133657,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 2545.7520749916666,
+          "score": 0.3271137980383949,
+          "source": "multi_harmonic_ls:H=1:half"
+        },
+        {
+          "period_s": 10183.008299966667,
+          "score": 0.3271137980383949,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 5402.316421488834,
+          "score": 0.16280161612033528,
+          "source": "multi_harmonic_ls:H=1:double"
+        },
+        {
+          "period_s": 5246.98022209773,
+          "score": 0.12388618852859012,
+          "source": "multi_harmonic_ls:H=1:double"
+        }
+      ]
+    }
+  }
+}

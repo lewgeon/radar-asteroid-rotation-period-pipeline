@@ -1,4 +1,4 @@
-# 观测时刻选取与接收窗口生成
+# 观测选时、测站可见性与 ADC 采样窗
 
 本文解释 Chirp 脉冲模式下程序如何从一段较大的时间范围中选出发射 Run，以及如何在发射时刻确定后计算回波到达时刻和 ADC 采样窗。相关实现位于 `observation/src/campaign_planning.py`、`observation/src/planning.py` 和 `observation/src/light_time.py`。
 
@@ -7,21 +7,21 @@
 程序按以下顺序工作：
 
 1. 用户设置发射选时范围、Run 数量和单次 Run 时长。
-2. 程序在整个发射选时范围内扫描几何可见性，得到一个或多个可见时段。
+2. 程序依据测站坐标类型确定可见性是否适用；有本地地平的测站扫描高度角约束，两端均为自定义直角坐标时直接使用完整候选时间范围。
 3. 程序计算一次 Run 需要的调度预留长度，并由此确定哪些时刻可以作为 Run 起点。
 4. 程序按照等距或随机规则选出每个 Run 的发射开始时刻。
 5. 程序按照 PRF 在每个 Run 内生成脉冲发射时刻。
 6. 程序对每个脉冲求解“发射—目标散射—接收”三个事件的时刻。
 7. 程序根据全部回波到达时刻、采集路径窗和脉冲宽度生成实际 ADC 采样窗。
 
-前四步解决“什么时候安排发射任务”，后三步解决“发射后什么时候打开接收机以及采哪些点”。发射选时范围不是 ADC 窗，调度预留区间也不是 ADC 窗。
+前四步解决“什么时候安排发射任务”，后三步解决“发射后回波何时到达，以及在哪些 ADC 时刻采样”。发射选时范围不是 ADC 窗，调度预留区间也不是 ADC 窗。
 
 ## 2. 术语
 
 | 术语 | 配置或符号 | 含义 |
 | --- | --- | --- |
 | 发射选时范围 | `schedule.start_utc` 至 `schedule.end_utc` | 自动寻找 Run 起点的搜索范围，也是可见性扫描范围。 |
-| 可见时段 | `visibility_windows` | 发射站和接收站均满足最低仰角要求的时间区间。 |
+| 可见时段 | `visibility_windows` | 适用高度角约束的测站满足最低仰角要求的时间区间；混合坐标只约束有本地地平的一侧。 |
 | 发射 Run | `tx_start_utc`、`tx_duration_s` | 一段连续的脉冲发射任务。Run 内按照 PRF 生成若干脉冲。 |
 | Run 调度时长 | $D$ | `schedule.run_duration_s`，也是自动生成的 `tx_duration_s`。它是允许安排一列完整脉冲的时间区间，不等于射频连续开启时间。 |
 | 调度预留长度 | $H$ | 单站自动选时为一次 Run 保守预留的总长度。它从 Run 开始时刻起算，覆盖实际发射及其后的传播、切换和接收余量。 |
@@ -34,13 +34,41 @@
 
 图中绿色和红色轴段分别表示几何可见与不可见时段；带白色脉冲纹理的深蓝色块表示 Run 调度区间，浅蓝色块表示调度预留尾部，二者合起来才是自动选时使用的一次完整调度预留区间。每个 Run 下方的紫色块表示根据实际回波到达时刻生成的 Run 级连续 ADC 窗；它的位置只能在逐脉冲光行时求解完成后确定，并不等同于调度预留尾部。示意图只表达组成、先后关系和选取规则，不按照真实秒数比例绘制。
 
+<a id="station-visibility"></a>
+
+### 2.1 测站坐标决定可见性是否适用
+
+“可见性”中的最低高度角需要本地地平和天顶方向。自定义三维直角坐标并不提供本地地平；其中的坐标原点也不能充当地表测站。各类测站按下表解释。
+
+| `state` | 坐标字段 | 坐标及可见性语义 |
+| --- | --- | --- |
+| `static` / `linear` | `position_m`，或 `position0_m` + `velocity_m_s` | 自定义直角坐标，不应用本地地平高度角约束 |
+| `astropy_geodetic` | `lat_deg` / `lon_deg` / `height_m` | 地球大地坐标；Astropy 通过 `EarthLocation.get_gcrs_posvel()` 给出随时间变化的 GCRS 位置 |
+| `geodetic_fixed` | `lat_deg` / `lon_deg` / `height_m` | 固定 ECEF 近似，不能与真实 Horizons 惯性向量混用 |
+
+两端均为 `static` / `linear` 时，不得填写 `visibility` 设置字段，包括 `sample_step_s` 与 `allow_unobservable_for_simulation`；后者即使为 `false` 也会被拒绝。空对象 `visibility: {}` 可以通过配置校验，但不施加可见性约束，GUI收集保存配置时会移除该段。campaign 直接使用完整观测窗口，不进入地平可见性计算，正常情况下 `visibility_applicable=false`、`visibility_computed=true`。混合坐标只约束有本地地平的一侧；若为直角坐标一侧填写对应的 `min_tx_elevation_deg` 或 `min_rx_elevation_deg`，配置校验报错。
+
+GUI 隐藏直角坐标下不适用的可见性字段，并在收集保存配置时移除它们；切回大地坐标时补入默认可见性字段。因此 GUI 的字段整理与 CLI 直接读取旧 JSON 不同：CLI 会拒绝不适用字段，不能依赖隐藏字段继续改变计算。切换仍须保持焦点和滚动位置。
+
+有本地地平的测站若几何计算失败，程序记录警告并设置 `visibility_computed=false`，预览不硬中断；位置查询失败也可能产生该状态。预览灰色斜纹表示“本应计算但失败”，不表示直角坐标默认不可见。单站可行性检查依赖几何量，不以存在可见时段为先决条件；可见性只影响 Run 的候选时间，不改变回波公式。
+
+<a id="ephemeris-reference-frame"></a>
+
+### 2.2 星历与测站使用同一参考系
+
+真实星历链路的 Horizons 目标向量固定以地心 `@399` 为查询中心、以地球赤道 `earth` 为参考平面；`astropy_geodetic` 测站的位置也在地心 GCRS 中给出。`ephemeris.location` 与 `ephemeris.refplane` 不是配置字段，校验器会将其作为未知字段拒绝。改变观测中心需要同时扩展测站坐标、高度角定义和光行时链路，不能只改一个查询参数。
+
+上述测站规则已在 4.2 落地。早期异常兜底的设计背景保留在[4.2 冻结说明](../4.2/VISIBILITY_AND_STATION_TYPE.md)，实施验收见[4.2 运行逻辑修改](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.2/vs_4.1/changes/RUNTIME_LOGIC_FIXES_2026-09-21.md)；旧背景不作为当前选时规则。本节汇总当前约束，后文继续说明候选时间如何转为 Run 和 ADC 窗。
+
 ## 3. 单次 Run 为什么需要调度预留
 
 在单站收发切换模式中，同一部雷达不能同时发射和接收。一次 Run 发射完成后，雷达需要切换到接收状态，并等待最后一批回波完整返回。自动选时必须为这些过程保留空间，否则后一个 Run 的发射可能与前一个 Run 的接收发生冲突。
 
 当前代码使用以下保守长度：
 
-$$H=D+\tau_{\mathrm{path,max}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}+T_{\mathrm{gate}}+T_{\mathrm{pulse}}.$$
+$$
+H=D+\tau_{\mathrm{path,max}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}+T_{\mathrm{gate}}+T_{\mathrm{pulse}}.
+$$
 
 | 符号 | 配置或计算来源 | 含义 |
 | --- | --- | --- |
@@ -62,11 +90,13 @@ $$H=D+\tau_{\mathrm{path,max}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}+T_{\mathr
 
 ### 4.1 构造候选时间区间
 
-勾选“包含非可见时段”时，整个发射选时范围都是候选时间区间。未勾选时，只有几何可见时段可以成为候选区间。
+对于应用地平可见性约束的测站，勾选“包含非可见时段”时，整个发射选时范围都是候选时间区间；未勾选时，仅保留适用测站满足高度角要求的区间。两端均为自定义直角坐标时，该选项不适用，程序直接使用整个发射选时范围。
 
 候选区间还必须能够完整容纳长度为 $H$ 的调度预留区间。若某个候选区间为 $[a,b]$，则 Run 起点只能位于：
 
-$$a\leq t_{\mathrm{run}}\leq b-H.$$
+$$
+a\leq t_{\mathrm{run}}\leq b-H.
+$$
 
 因此，可见时段长度小于 $H$ 时，该时段无法容纳一次 Run，会被排除。这里检查的是完整的“实际发射加调度预留尾部”，不能只让深蓝色发射部分落入可见时段。
 
@@ -100,7 +130,7 @@ $$a\leq t_{\mathrm{run}}\leq b-H.$$
 | 门时延 $T_{\mathrm{gate}}=D_{\mathrm{extent}}/c$ | $0\,\mathrm{s}$ |
 | 脉冲宽度 $T_{\mathrm{pulse}}$ | $0.01\,\mathrm{s}$ |
 
-该配置允许包含非可见时段，所以完整的 5 s 发射选时范围都作为候选区间。测站位于坐标原点，无法定义本地地平坐标系，几何可见性本身不能计算；允许非可见时段使这个纯算法仿真实例仍能继续选时。
+该配置的发射站和接收站均为自定义直角坐标，不定义本地地平，也不包含 `visibility` 段。程序直接把完整的 5 s 发射选时范围作为候选区间；这不依赖“允许非可见时段”的兜底。开发夹具用于核对静止几何和调度关系，不代表真实地面雷达的可见性条件。
 
 配置中的 `selection=equal_visible_time` 表示非随机自动选取。此时程序根据 `run_count` 和 `run_duration_s` 重新生成 Run；若 JSON 里仍残留手动 `schedule.runs` 或 `random_seed`，规范化会直接报错，而不是静默忽略。自动选取还需要明确的选时窗口右端：`schedule.end_utc` 缺失时程序直接报错，不会退回按残留 `runs` 推算（那会让窗口静默塌成 1 秒）。
 
@@ -108,7 +138,9 @@ $$a\leq t_{\mathrm{run}}\leq b-H.$$
 
 先按照符号含义代入：
 
-$$\begin{aligned}H={}&D+\tau_{\mathrm{path,max}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}+T_{\mathrm{gate}}+T_{\mathrm{pulse}}\\={}&0.4+2.0+0.2+0.2+0+0.01\\={}&2.81\,\mathrm{s}.\end{aligned}$$
+$$
+\begin{aligned}H={}&D+\tau_{\mathrm{path,max}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}+T_{\mathrm{gate}}+T_{\mathrm{pulse}}\\={}&0.4+2.0+0.2+0.2+0+0.01\\={}&2.81\,\mathrm{s}.\end{aligned}
+$$
 
 这意味着一次 Run 可以在 0.4 s 的调度区间内安排脉冲，自动选时则从 Run 开始时刻起保留 2.81 s，避免在回波尚未完整接收时安排下一次单站发射。
 
@@ -116,11 +148,15 @@ $$\begin{aligned}H={}&D+\tau_{\mathrm{path,max}}+T_{\mathrm{switch}}+T_{\mathrm{
 
 发射选时范围为 $[0,5]$ s。为了让长度为 2.81 s 的完整预留区间不越过右端点，Run 起点的可行范围是：
 
-$$0\leq t_{\mathrm{run}}\leq W-H=5-2.81=2.19\,\mathrm{s}.$$
+$$
+0\leq t_{\mathrm{run}}\leq W-H=5-2.81=2.19\,\mathrm{s}.
+$$
 
 只有一次非随机 Run，因此取可行起点区间中点：
 
-$$t_{\mathrm{run}}=\frac{0+2.19}{2}=1.095\,\mathrm{s}.$$
+$$
+t_{\mathrm{run}}=\frac{0+2.19}{2}=1.095\,\mathrm{s}.
+$$
 
 发射选时范围从 `2026-09-11T09:30:00Z` 开始，所以 Run 从 `2026-09-11T09:30:01.095000Z` 开始。调度上保留的区间是相对时刻 $[1.095,3.905]$ s，其中前 0.4 s 是发射 Run，其余部分是传播、切换和接收的保守余量。
 
@@ -128,11 +164,15 @@ $$t_{\mathrm{run}}=\frac{0+2.19}{2}=1.095\,\mathrm{s}.$$
 
 PRF 为 20 Hz，脉冲重复周期为：
 
-$$T_{\mathrm{PRT}}=\frac{1}{20}=0.05\,\mathrm{s}.$$
+$$
+T_{\mathrm{PRT}}=\frac{1}{20}=0.05\,\mathrm{s}.
+$$
 
 脉冲宽度为 0.01 s。程序只生成能够完整放入 0.4 s Run 的脉冲，脉冲数按下式计算：
 
-$$N=\left\lfloor\left(D-T_{\mathrm{pulse}}\right)\mathrm{PRF}\right\rfloor+1=\lfloor(0.4-0.01)\times20\rfloor+1=8.$$
+$$
+N=\left\lfloor\left(D-T_{\mathrm{pulse}}\right)\mathrm{PRF}\right\rfloor+1=\lfloor(0.4-0.01)\times20\rfloor+1=8.
+$$
 
 8 个脉冲的发射前沿为 `1.095, 1.145, ..., 1.445 s`。最后一个脉冲从 1.445 s 发射到 1.455 s，完整发射结束；Run 调度区间到 1.495 s 才结束，因此末尾剩余 0.04 s 空闲。下一个脉冲若在 1.495 s 开始，将到 1.505 s 才结束，已经越过 Run 边界，所以程序不生成它。这里不存在脉冲中断。
 
@@ -140,9 +180,13 @@ $$N=\left\lfloor\left(D-T_{\mathrm{pulse}}\right)\mathrm{PRF}\right\rfloor+1=\lf
 
 每个脉冲经过 1 s 到达目标，再经过 1 s 返回接收站，所以质心参考回波依次在 `3.095, 3.145, ..., 3.445 s` 到达。采集路径窗为 0。前沿和后沿都先加半个采样再向上取整，所以左侧仍留 1 个样点，右侧是脉冲宽度 0.01 s 再加这半个采样。随后取所有脉冲保存行的并集外包络，形成一个 Run 共用的连续 ADC 窗。因此整个 Run 的 ADC 窗为：
 
-$$t_{\mathrm{ADC,on}}=3.095-\frac{1}{5000}=3.0948\,\mathrm{s},$$
+$$
+t_{\mathrm{ADC,on}}=3.095-\frac{1}{5000}=3.0948\,\mathrm{s},
+$$
 
-$$t_{\mathrm{ADC,off}}=3.0948+\frac{1803}{5000}=3.4554\,\mathrm{s}.$$
+$$
+t_{\mathrm{ADC,off}}=3.0948+\frac{1803}{5000}=3.4554\,\mathrm{s}.
+$$
 
 窗尾由保存行的整数网格决定：最后一行起点索引为 1750，末格索引为 $1750+53-1=1802$，取 $Q=1803$ 使半开窗 $[0,1803)$ 覆盖该末格。物理尾沿是最后一发质心回波再加脉宽，$3.445+0.01=3.455\,\mathrm{s}$。末格时刻 $3.0948+1802/5000=3.4552\,\mathrm{s}$，不早于这个尾沿。多出来的 0.0002 s 就是半个采样补偿向上取整后的那一列。
 
@@ -150,15 +194,21 @@ $$t_{\mathrm{ADC,off}}=3.0948+\frac{1803}{5000}=3.4554\,\mathrm{s}.$$
 
 采样率为 5000 Hz，一个 ADC 样点间隔为 $0.0002\,\mathrm{s}$。采集路径窗为 0，所以
 
-$$n_{\mathrm{pre}}=\lceil T_{\mathrm{gate}}f_s+0.5\rceil=\lceil 0.5\rceil=1.$$
+$$
+n_{\mathrm{pre}}=\lceil T_{\mathrm{gate}}f_s+0.5\rceil=\lceil 0.5\rceil=1.
+$$
 
 脉冲宽度 0.01 s 对应 50 个采样间隔。后置格数再加 0.5 点后向上取整（理由见 §5.6）：
 
-$$n_{\mathrm{after}}=\lceil 0.01\times 5000+0.5\rceil=51.$$
+$$
+n_{\mathrm{after}}=\lceil 0.01\times 5000+0.5\rceil=51.
+$$
 
 加上质心所在的那一列：
 
-$$N_{\mathrm{fast}}=1+51+1=53.$$
+$$
+N_{\mathrm{fast}}=1+51+1=53.
+$$
 
 相邻脉冲相隔 0.05 s，即 250 个 ADC 索引。53 小于 250，相邻保存行不共享全局索引，因此 `window_overlap` 为假。脉冲宽度 0.01 s 也小于 0.05 s 的脉冲间隔，有效回波支撑不相交，`signal_echo_overlap` 同样为假。
 
@@ -168,7 +218,9 @@ $$N_{\mathrm{fast}}=1+51+1=53.$$
 
 记静止时标下的后沿需求为 $T_{\mathrm{after}}=T_{\mathrm{pulse}}+T_{\mathrm{gate}}$。后置格数按
 
-$$n_{\mathrm{pre}}=\left\lceil T_{\mathrm{before}}f_s+0.5\right\rceil,\qquad n_{\mathrm{after}}=\left\lceil T_{\mathrm{after}}f_s+0.5\right\rceil$$
+$$
+n_{\mathrm{pre}}=\left\lceil T_{\mathrm{before}}f_s+0.5\right\rceil,\qquad n_{\mathrm{after}}=\left\lceil T_{\mathrm{after}}f_s+0.5\right\rceil
+$$
 
 计算。行的两端都相对舍入后的质心量格数，而质心在采样栅格上带有由 $\mathrm{rint}$ 产生的最多半个采样的残差。只做 $\lceil T f_s\rceil$ 时，质心被舍入到更晚的网格点会让首格晚于路径窗前沿，被舍入到更早的网格点会让末格早于路径窗尾沿。两侧都加上 0.5 点后，首格不晚于前沿，末格不早于尾沿。代价是每一侧最多增加 1 列。本例 $T_{\mathrm{before}}=0$、$T_{\mathrm{after}}f_s=50$，补偿后 $n_{\mathrm{pre}}=1$、$n_{\mathrm{after}}=51$，故 $N_{\mathrm{fast}}=53$。行宽多出的列会把“行宽恰好等于脉冲间隔”的配置标成 `window_overlap`。
 
@@ -178,7 +230,9 @@ $$n_{\mathrm{pre}}=\left\lceil T_{\mathrm{before}}f_s+0.5\right\rceil,\qquad n_{
 
 单站模式还会检查最后一次发射结束后的切换是否足够快。设最早有效回波开始时刻为 $t_{\mathrm{echo,earliest}}$，必须满足：
 
-$$t_{\mathrm{tx,end}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}<t_{\mathrm{echo,earliest}}.$$
+$$
+t_{\mathrm{tx,end}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}<t_{\mathrm{echo,earliest}}.
+$$
 
 如果该条件不成立，发射、切换和安全余量已经侵入最早回波，程序直接报错，不会把 ADC 窗向后移动并悄悄丢弃信号。
 
@@ -190,9 +244,13 @@ $$t_{\mathrm{tx,end}}+T_{\mathrm{switch}}+T_{\mathrm{safety}}<t_{\mathrm{echo,ea
 
 考虑路径变化导致的时标伸缩后，第 $i$ 个脉冲需要覆盖的前后范围为：
 
-$$T_{\mathrm{before},i}=\frac{D_{\mathrm{extent}}}{c}S_i,$$
+$$
+T_{\mathrm{before},i}=\frac{D_{\mathrm{extent}}}{c}S_i,
+$$
 
-$$T_{\mathrm{after},i}=\left(T_{\mathrm{pulse}}+\frac{D_{\mathrm{extent}}}{c}\right)S_i.$$
+$$
+T_{\mathrm{after},i}=\left(T_{\mathrm{pulse}}+\frac{D_{\mathrm{extent}}}{c}\right)S_i.
+$$
 
 程序取 $n_{\mathrm{pre}}=\lceil\max_i(T_{\mathrm{before},i})f_s+0.5\rceil$，再以本 Run 的首个质心接收事件为整数网格锚点，把连续 ADC 窗开启时刻设为该事件之前 $n_{\mathrm{pre}}$ 个采样周期。因为 $n_{\mathrm{pre}}/f_s\geq\max_i(T_{\mathrm{before},i})$ 且同一 Run 的接收事件严格递增，这个起点能够覆盖所有脉冲的最早回波，同时保证第一条保存行从全局 ADC 索引 0 开始。关闭时刻由保存行整数网格给出：末格不早于最晚的 $T_{\mathrm{after}}$。路径窗只计入一次；所有保存行的外包络就是 Run 级连续 ADC 窗。物理上接收机不会按二维行反复开关。
 
@@ -200,11 +258,15 @@ $$T_{\mathrm{after},i}=\left(T_{\mathrm{pulse}}+\frac{D_{\mathrm{extent}}}{c}\ri
 
 以 `configs/chirp_mesh_target_test.json` 的静止时标为例：$D_{\mathrm{extent}}=1000\,\mathrm{m}$，$c=299792458\,\mathrm{m/s}$，所以
 
-$$T_{\mathrm{gate}}=\frac{1000}{c}=3.335641\,\mu\mathrm{s}.$$
+$$
+T_{\mathrm{gate}}=\frac{1000}{c}=3.335641\,\mu\mathrm{s}.
+$$
 
 快时间采样率 $f_s=200\,\mathrm{MHz}$，于是
 
-$$n_{\mathrm{pre}}=\lceil T_{\mathrm{gate}}f_s+0.5\rceil=\lceil 667.628\rceil=668.$$
+$$
+n_{\mathrm{pre}}=\lceil T_{\mathrm{gate}}f_s+0.5\rceil=\lceil 667.628\rceil=668.
+$$
 
 质心参考回波落在第 668 号样点，行内时刻为 $668/f_s=3.340\,\mu\mathrm{s}$。计划允许的最早回波在质心之前 $T_{\mathrm{gate}}$，行内时刻为 $3.340\,\mu\mathrm{s}-3.335641\,\mu\mathrm{s}=4.359\,\mathrm{ns}$，介于第 0 号样点与第 1 号样点之间。
 
@@ -214,31 +276,41 @@ $$n_{\mathrm{pre}}=\lceil T_{\mathrm{gate}}f_s+0.5\rceil=\lceil 667.628\rceil=66
 
 设双基地总传播路径为 $L=R_{\mathrm{tx}}+R_{\mathrm{rx}}$，传播时延为 $L/c$。发射时刻和接收时刻局部满足：
 
-$$t_{\mathrm r}=t_{\mathrm e}+\frac{L(t_{\mathrm r})}{c}.$$
+$$
+t_{\mathrm r}=t_{\mathrm e}+\frac{L(t_{\mathrm r})}{c}.
+$$
 
 对时间求导可得：
 
-$$dt_{\mathrm e}=\left(1-\frac{1}{c}\frac{dL}{dt_{\mathrm r}}\right)dt_{\mathrm r}.$$
+$$
+dt_{\mathrm e}=\left(1-\frac{1}{c}\frac{dL}{dt_{\mathrm r}}\right)dt_{\mathrm r}.
+$$
 
 定义总路径相对接收时刻的变化率：
 
-$$v_L=\frac{dL}{dt_{\mathrm r}},$$
+$$
+v_L=\frac{dL}{dt_{\mathrm r}},
+$$
 
 则发射端持续时间和接收端持续时间之间的局部关系为：
 
-$$dt_{\mathrm r}=\frac{dt_{\mathrm e}}{1-v_L/c}.$$
+$$
+dt_{\mathrm r}=\frac{dt_{\mathrm e}}{1-v_L/c}.
+$$
 
 当总路径增长时 $v_L>0$，目标整体表现为远离，接收时间轴被拉长；总路径缩短时 $v_L<0$，接收时间轴被压缩。这与载波多普勒频移来自同一个传播时延变化机制。代码在每个脉冲发射时刻两侧取 $\pm0.01\,\mathrm{s}$，分别重新求解完整三事件几何，再用中心差分估计 $v_L$。
 
 ADC 规划的目标是避免截断，因此只在需要时扩大覆盖范围，不因路径缩短主动减小采集路径窗：
 
-$$S_i=\max\left(1,\frac{1}{1-v_{L,i}/c}\right).$$
+$$
+S_i=\max\left(1,\frac{1}{1-v_{L,i}/c}\right).
+$$
 
 例如 $v_L=30\,\mathrm{km/s}$ 时，$S\approx1.00010001$，一个 1 ms 脉冲在接收时间轴上大约增加 $0.1\,\mu\mathrm{s}$。真正的回波生成仍使用带符号的实际局部时标映射，因此回波本身既可能拉伸，也可能压缩。
 
 ## 9. 可见性采样与星历查询步长
 
-`visibility.sample_step_s` 是可见性扫描步长。程序在整个发射选时范围内按该步长计算发射端和接收端的仰角，再用相邻可见性采样点的中点近似可见窗口边界。当前实现即使面对稀疏可见时段也会扫描整个范围，没有采用粗扫后局部细化算法。一个月范围使用 30 s 步长约产生 8.64 万个采样点。
+`visibility.sample_step_s` 是可见性扫描步长，仅在至少一侧测站应用地平高度角约束时适用。程序在整个发射选时范围内按该步长计算发射端和接收端的仰角，再用相邻可见性采样点的中点近似可见窗口边界。当前实现即使面对稀疏可见时段也会扫描整个范围，没有采用粗扫后局部细化算法。一个月范围使用 30 s 步长约产生 8.64 万个采样点。
 
 `ephemeris.query_step_s` 是 Horizons 状态表的查询间隔。程序先取得覆盖所需时间范围的星历表，再在本地对光行时求解所需的具体时刻进行线性插值。它与可见性采样步长控制不同的计算过程，不能互相替代。
 

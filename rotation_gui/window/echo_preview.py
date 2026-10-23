@@ -21,30 +21,27 @@ def build_echo_preview_html(echo_npz: Path, html_path: Path) -> Path:
 
     figure = build_echo_preview_figure(echo_npz)
     html_path.parent.mkdir(parents=True, exist_ok=True)
-    figure.write_html(str(html_path), include_plotlyjs=True)
-    return html_path
+    from .inversion_feature_preview import _views
+    return _views().write_html_atomic(figure,html_path,standalone=False)
 
 
 def build_echo_preview_figure(echo_npz: Path):
     """Build the Plotly preview figure for one ``echo.npz`` (CW or chirp)."""
 
-    with np.load(echo_npz, allow_pickle=False) as data:
-        iq = np.asarray(data["iq"])
-        elapsed = np.asarray(data["elapsed_s"], dtype=float)
-        metadata = {}
-        if "metadata_json" in data.files:
-            import json
-
-            metadata = json.loads(str(data["metadata_json"]))
-        if iq.ndim == 1:
-            return _cw_preview_figure(elapsed, iq, metadata)
-        if iq.ndim == 2:
-            fast_time = (
-                np.asarray(data["fast_time_s"], dtype=float)
-                if "fast_time_s" in data.files
-                else None
-            )
-            return _chirp_preview_figure(iq, fast_time, metadata, data)
+    from .result_service import load_run, run_catalog
+    run = run_catalog(echo_npz)[0][0]
+    echo, _ = load_run(echo_npz, run)
+    if echo.iq.ndim == 1:
+        return _cw_preview_figure(echo.elapsed_s, echo.iq, echo.metadata)
+    if echo.iq.ndim == 2:
+        class RowFields(dict):
+            @property
+            def files(self):
+                return list(self)
+        fields = RowFields(vars(echo))
+        figure = _chirp_preview_figure(echo.iq, echo.fast_time_s, echo.metadata, fields)
+        figure.update_layout(title=f'回波预览 · run_id={run} · {len(echo.iq)}脉冲 · 原始／未经公共补偿脉压')
+        return figure
     raise ValueError(f"不支持的 iq 维度：{iq.ndim}")
 
 
@@ -119,23 +116,17 @@ def _pulse_compressed_amplitude(iq, fast_time, metadata):
     if width <= 0.0 or abs(bandwidth) <= 0.0:
         return None, "缺少 pulse_width_s / pulse_bandwidth_hz，无法做脉冲压缩"
     convention = str(metadata.get("baseband_convention", "centered"))
-    try:
-        import sys
-
-        inversion_src = Path(__file__).resolve().parents[2] / "inversion" / "src"
-        if str(inversion_src) not in sys.path:
-            sys.path.insert(0, str(inversion_src))
-        from radar_signal import matched_filter_chirp
-
-        compressed = matched_filter_chirp(
-            iq,
-            fast_time,
-            width,
-            abs(bandwidth),
-            baseband_convention=convention,
-        )
-    except Exception as exc:  # pragma: no cover - depends on optional imports
-        return None, f"Matched filter unavailable: {exc}"
+    from types import SimpleNamespace
+    from .result_service import compressed_run
+    count=len(iq)
+    echo=SimpleNamespace(iq=iq,fast_time_s=fast_time,valid=np.ones(iq.shape,bool),
+        metadata={**metadata,'pulse_bandwidth_hz':abs(bandwidth),'baseband_convention':convention},
+        elapsed_s=np.arange(count,dtype=float),scatter_elapsed_s=np.arange(count,dtype=float),
+        run_id=np.zeros(count,int),coherence_id=np.zeros(count,int),
+        row_fast_time_offset_s=np.zeros(count))
+    # Legacy helper keeps its original uncorrected, cropped range-image contract.
+    # Failures propagate instead of certifying an incomplete HTML as successful.
+    compressed=compressed_run(echo,{'motion_compensation':'none'})
     return np.abs(compressed), None
 
 
@@ -282,4 +273,6 @@ def _predicted_centroid_row_time_s(data, pulse_count: int):
 
 
 def open_echo_preview_in_browser(html_path: Path) -> None:
+    from .inversion_feature_preview import _views
+    _views().ensure_responsive_html(html_path)
     QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(html_path).resolve())))

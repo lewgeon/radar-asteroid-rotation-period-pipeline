@@ -1,0 +1,297 @@
+{
+  "archived_utc": "2026-10-16T08:43:43.367394+00:00",
+  "scope": "same noiseless saved IQ; diagnostic cuts/window/CPI comparisons, no production changes",
+  "config": {
+    "period_min_s": 1800.0,
+    "period_max_s": 14400.0,
+    "period_grid_size": 4000,
+    "cpi_duration_s": 1.0,
+    "motion_compensation": "auto",
+    "period_time_role": "scatter_centroid",
+    "los_phase_compensation": false,
+    "multi_harmonic_enabled": false,
+    "refine_period": true,
+    "compare_methods": false,
+    "doppler_estimator": "spectral_moments",
+    "period_selection": "predictive_joint",
+    "compute_device": "cpu",
+    "uncertainty_method": "none"
+  },
+  "summary": [
+    {
+      "duration_s": 0.5,
+      "window": "hann",
+      "observable": "centroid_hz",
+      "observations": 1200,
+      "best_period_s": 5427.4896123055405,
+      "best_score": 0.3121425456254142,
+      "reference_5400_fit_score": 0.2911452112343338,
+      "std": 0.012641146978881095,
+      "tail_power_minmax": [
+        5.988124502930281e-06,
+        5.178729400869059e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.0005353306959568779,
+        0.05759728086517189
+      ],
+      "window_rms_minmax": [
+        1.154721996947188,
+        1.1547245460784867
+      ]
+    },
+    {
+      "duration_s": 0.5,
+      "window": "hann",
+      "observable": "width_hz",
+      "observations": 1200,
+      "best_period_s": 4816.842997075248,
+      "best_score": 0.1254195956766302,
+      "reference_5400_fit_score": 0.0558131842293903,
+      "std": 0.004824570693268012,
+      "tail_power_minmax": [
+        5.988124502930281e-06,
+        5.178729400869059e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.0005353306959568779,
+        0.05759728086517189
+      ],
+      "window_rms_minmax": [
+        1.154721996947188,
+        1.1547245460784867
+      ]
+    },
+    {
+      "duration_s": 0.5,
+      "window": "hann",
+      "observable": "diagnostic_under_5hz_width",
+      "observations": 1200,
+      "best_period_s": 5399.954234052097,
+      "best_score": 0.5467144926520182,
+      "reference_5400_fit_score": 0.546714393675212,
+      "std": 0.001039498269585515,
+      "tail_power_minmax": [
+        5.988124502930281e-06,
+        5.178729400869059e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.0005353306959568779,
+        0.05759728086517189
+      ],
+      "window_rms_minmax": [
+        1.154721996947188,
+        1.1547245460784867
+      ]
+    },
+    {
+      "duration_s": 1.0,
+      "window": "boxcar",
+      "observable": "centroid_hz",
+      "observations": 500,
+      "best_period_s": 5418.397320248461,
+      "best_score": 0.41831916688786,
+      "reference_5400_fit_score": 0.4048445126523691,
+      "std": 0.0011133424351385335,
+      "tail_power_minmax": [
+        0.0010466290948222769,
+        0.009086538345589153
+      ],
+      "tail_second_moment_minmax": [
+        0.9403127812444678,
+        0.9440723961208732
+      ],
+      "window_rms_minmax": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "duration_s": 1.0,
+      "window": "boxcar",
+      "observable": "width_hz",
+      "observations": 500,
+      "best_period_s": 5396.847629916069,
+      "best_score": 0.44152119750520846,
+      "reference_5400_fit_score": 0.4411327420127725,
+      "std": 0.17097329767963432,
+      "tail_power_minmax": [
+        0.0010466290948222769,
+        0.009086538345589153
+      ],
+      "tail_second_moment_minmax": [
+        0.9403127812444678,
+        0.9440723961208732
+      ],
+      "window_rms_minmax": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "duration_s": 1.0,
+      "window": "boxcar",
+      "observable": "diagnostic_under_5hz_width",
+      "observations": 500,
+      "best_period_s": 5397.001608887007,
+      "best_score": 0.4555539559580062,
+      "reference_5400_fit_score": 0.4551912824937,
+      "std": 0.04214921417007093,
+      "tail_power_minmax": [
+        0.0010466290948222769,
+        0.009086538345589153
+      ],
+      "tail_second_moment_minmax": [
+        0.9403127812444678,
+        0.9440723961208732
+      ],
+      "window_rms_minmax": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "duration_s": 1.0,
+      "window": "hann",
+      "observable": "centroid_hz",
+      "observations": 500,
+      "best_period_s": 5427.837155319408,
+      "best_score": 0.31357530901662145,
+      "reference_5400_fit_score": 0.2919927492613186,
+      "std": 0.012610363674236983,
+      "tail_power_minmax": [
+        1.788935126435522e-06,
+        3.6357549465177524e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.0015555179034016724,
+        0.16833420176002595
+      ],
+      "window_rms_minmax": [
+        0.577360998473594,
+        0.5773622730392434
+      ]
+    },
+    {
+      "duration_s": 1.0,
+      "window": "hann",
+      "observable": "width_hz",
+      "observations": 500,
+      "best_period_s": 4817.283998290664,
+      "best_score": 0.12812105699812393,
+      "reference_5400_fit_score": 0.056008909598842305,
+      "std": 0.009217409393374208,
+      "tail_power_minmax": [
+        1.788935126435522e-06,
+        3.6357549465177524e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.0015555179034016724,
+        0.16833420176002595
+      ],
+      "window_rms_minmax": [
+        0.577360998473594,
+        0.5773622730392434
+      ]
+    },
+    {
+      "duration_s": 1.0,
+      "window": "hann",
+      "observable": "diagnostic_under_5hz_width",
+      "observations": 500,
+      "best_period_s": 5399.845440082251,
+      "best_score": 0.5472686928480881,
+      "reference_5400_fit_score": 0.5472675593446535,
+      "std": 0.002105413507544399,
+      "tail_power_minmax": [
+        1.788935126435522e-06,
+        3.6357549465177524e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.0015555179034016724,
+        0.16833420176002595
+      ],
+      "window_rms_minmax": [
+        0.577360998473594,
+        0.5773622730392434
+      ]
+    },
+    {
+      "duration_s": 2.0,
+      "window": "hann",
+      "observable": "centroid_hz",
+      "observations": 100,
+      "best_period_s": 5427.809315366213,
+      "best_score": 0.3207087949302261,
+      "reference_5400_fit_score": 0.29868952582306585,
+      "std": 0.01253093083289845,
+      "tail_power_minmax": [
+        8.709387122251192e-07,
+        2.9941042534414596e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.005529221108419293,
+        0.3660893414829147
+      ],
+      "window_rms_minmax": [
+        0.288680499236797,
+        0.2886811365196217
+      ]
+    },
+    {
+      "duration_s": 2.0,
+      "window": "hann",
+      "observable": "width_hz",
+      "observations": 100,
+      "best_period_s": 4817.423606743501,
+      "best_score": 0.1326043800746196,
+      "reference_5400_fit_score": 0.05710818227782066,
+      "std": 0.01618007756244914,
+      "tail_power_minmax": [
+        8.709387122251192e-07,
+        2.9941042534414596e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.005529221108419293,
+        0.3660893414829147
+      ],
+      "window_rms_minmax": [
+        0.288680499236797,
+        0.2886811365196217
+      ]
+    },
+    {
+      "duration_s": 2.0,
+      "window": "hann",
+      "observable": "diagnostic_under_5hz_width",
+      "observations": 100,
+      "best_period_s": 5399.73043917673,
+      "best_score": 0.5641190657935302,
+      "reference_5400_fit_score": 0.5641155139183647,
+      "std": 0.00398884049783247,
+      "tail_power_minmax": [
+        8.709387122251192e-07,
+        2.9941042534414596e-05
+      ],
+      "tail_second_moment_minmax": [
+        0.005529221108419293,
+        0.3660893414829147
+      ],
+      "window_rms_minmax": [
+        0.288680499236797,
+        0.2886811365196217
+      ]
+    }
+  ],
+  "seconds": 34.2517852,
+  "raw_result_sha256": "d4f62546bab390543766474de0cd2909025f3cd41a18819c8aa12bc783b7fbbc",
+  "input_sha256": "945e43db26c54cd9149ee5fc1b4ee7526a785945bde7eb5e612bbce847dd3197",
+  "snapshot_sha256": "efd353f51d97b549ec57b16dffe7659a562756f987226cbfab1f2ec6da66a7bb",
+  "source_hashes": {
+    "scripts/diagnose_doppler_spectrum.py": "54f899586e071b7df35d1dfeb5a90181876789336acf60db7af3d43dbb8c10d2",
+    "scripts/monte_carlo_receiver.py": "0c168ce3072e45a30da7856ee38c5316afce1f841b0b3c46b6035dce8a3ec0e7",
+    "scripts/plot_receiver_snr.py": "7d5e7b85ecb342ec080cb950ac46a305c9683b2c4e950ee142e5b362c4e01cc5",
+    "inversion/src/inversion.py": "cfd4c0004d35bd1e52d454e0749e022f36d61d2f31ea598c4fc50ec68d1f7c87"
+  },
+  "reference": "https://docs.scipy.org/doc/scipy/tutorial/signal.html#spectral-analysis"
+}

@@ -1,6 +1,6 @@
-# 变更验证与证据留存策略（4.2）
+# 变更验证与证据留存策略（4.3）
 
-本文件说明本仓库对"改了代码并要声称它对/更快"这类工作的最低要求，以及验收证据放在哪里。它不替代 `docs/4.2/vs_4.1/changes/` 下逐次变更的记录，而是约束这些记录怎么写、产物放哪里。
+本文件说明本仓库对"改了代码并要声称它对/更快"这类工作的最低要求，以及验收证据放在哪里。它不替代 `docs/4.3/vs_4.2/changes/` 下逐次变更的记录，而是约束这些记录怎么写、产物放哪里。研究实验独立存放在 `experiments/`，每日日志放 `logs/`，命名与整合规则以根目录 AGENTS.md 为准。
 
 ## 结论必须带作用域
 
@@ -29,10 +29,10 @@
 | 类别 | 内容 | 位置 | 架构大改时 |
 | --- | --- | --- | --- |
 | 不变量 | 测试与断言 | `echo/tests/`、`tests/`（仓库内，CI 运行） | 过时的删除，不保留 |
-| 证据 | 变更说明、结论、命令、误差表 | `docs/<版本>/vs_<上一版>/changes/`，按版本冻结 | 不复改，新版本另写 |
+| 证据 | 变更说明、结论、命令、误差表 | 生产证据放 `changes/`、研究证据放 `experiments/`，均在 `docs/<版本>/vs_<上一版>/` 下；`logs/` 只作索引 | 旧数值／前提不改，后续追加独立阶段；用户授权整合时可迁移合并并维护引用 |
 | 原始材料 | 日志、大文件、一次性脚本 | 仓库外（发布附件或临时目录） | 不保留，靠文档命令重建 |
 
-发布归档用 `.gitattributes` 的 `export-ignore` 排除测试与内部证据目录：`echo/.gitattributes` 排除 `tests/**`，根目录 `.gitattributes` 排除 `docs/4.2/vs_4.1/**`。注意 gitattributes 的目录模式不会递归生效，必须写成 `dir/**`。
+发布归档用 `.gitattributes` 的 `export-ignore` 排除测试与内部证据目录：`echo/.gitattributes` 排除 `tests/**`，根目录 `.gitattributes` 排除各版本 `vs_<上一版>/**`（包括logs、changes、experiments和plans）。注意 gitattributes 的目录模式不会递归生效，必须写成 `dir/**`。
 
 ## 破坏性操作
 
@@ -46,3 +46,35 @@
 
 - `C:\Users\35168\.codex\AGENTS.md` 中的"变更验证纪律（通用，任何项目都适用）"一节：每次会话都进上下文的硬规则。
 - `C:\Users\35168\.agents\skills\change-verification-discipline\SKILL.md`：完整流程、交付前检查清单与对抗性审查提示词模板。
+
+<a id="inversion-contracts"></a>
+
+## 事前协议：契约实验
+
+此段由原实验协议归入相应专题，记录当时设计及追加验证条件；不表示本次重新执行。
+
+1. 配置只接受当前字段；废弃字段以及重复且冲突的物理量必须明确报错。
+2. Chirp 的 ADC 时序、脉宽和路径支撑只由 ObservationPlan 提供给 echo。
+3. Chirp CPI 使用秒数配置，并按回波元数据中的 PRF 转为整数脉冲数。
+4. 点目标与 mesh 配置互斥裁剪，点目标幅度只使用 `amplitude_scale`。
+5. 一维/二维 IQ 与所有行轴字段必须通过严格形状校验。
+
+<a id="protocol-9"></a>
+
+## 事前协议：全模块契约验收
+
+此段由原实验协议归入相应专题，记录当时设计及追加验证条件；不表示本次重新执行。
+
+### 可选反演功能验收
+
+使用 `conda activate pytorch` 后执行 `python -m pytest -q tests/test_optional_period_methods.py tests/test_optional_period_gui.py --import-mode=importlib -p no:cacheprovider`（仓库根目录）。验收包括独立加权回归对照、八种可区分分支、显式极轴与一倍／两倍补偿、CW 拒绝新配置、真实 CPI 与逐脉冲路由、旧冻结结果、开关隐藏参数及比较报告防止陈旧结果。GUI 检查真实事件循环、两种窗口宽度、反复切换、焦点和滚动范围、配置 JSON 往返与非法子字段关闭。此验收证明功能与路由，不是未知形状高精度研究；一般形状精度收益仍待后续实验。
+
+```powershell
+conda activate pytorch
+python -m pytest -q tests
+python -m pytest -q inversion\tests
+Push-Location observation; python -m pytest -q tests; Pop-Location
+Push-Location echo; python -m pytest -q tests; Pop-Location
+```
+
+快速 smoke 只能证明链路可运行，不能冒充论文级复现。论文级实验还需要固定数据、参数、随机种子、硬件与误差指标，并记录训练或计算耗时。

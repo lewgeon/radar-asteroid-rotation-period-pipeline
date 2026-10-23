@@ -123,6 +123,8 @@ ECHO_WAVEFORM_DEFAULTS = {
 }
 
 INVERSION_FIELD_ORDER = (
+    "period_selection",
+    "compute_device", "uncertainty_method", "uncertainty_replicates", "uncertainty_seed",
     "stft_window_samples",
     "stft_overlap_fraction",
     "cpi_duration_s",
@@ -132,15 +134,27 @@ INVERSION_FIELD_ORDER = (
     "period_grid_size",
     "period_time_role",
     "motion_compensation",
+    "los_phase_compensation",
+    "spin_axis_ra_deg",
+    "spin_axis_dec_deg",
+    "phase_period_convention",
+    "multi_harmonic_enabled",
     "harmonics",
+    "refine_period",
+    "compare_methods",
 )
 INVERSION_CW_ONLY = {"stft_window_samples", "stft_overlap_fraction"}
 INVERSION_CHIRP_ONLY = {
+    "period_selection",
+    "compute_device", "uncertainty_method", "uncertainty_replicates", "uncertainty_seed",
+    "doppler_estimator",
     "cpi_duration_s",
     "cpi_hop_duration_s",
     "motion_compensation",
     "period_time_role",
     "harmonics",
+    "los_phase_compensation", "spin_axis_ra_deg", "spin_axis_dec_deg",
+    "phase_period_convention", "multi_harmonic_enabled", "refine_period", "compare_methods",
 }
 ECHO_MESH_ONLY = ("model_path", "target", "scattering_power", "scattering_spot")
 
@@ -165,7 +179,7 @@ CARD_ORDER = {
         "target",
         "scattering_spot",
     ),
-    "inversion": ("spectrum", "period_search"),
+    "inversion": ("spectrum", "period_search", "period_enhancements"),
 }
 
 _ALL_STATE_FIELD_KEYS = {key for fields in STATE_FIELDS.values() for key in fields} - {"id"}
@@ -401,6 +415,20 @@ class ScheduleFeedbackWidget(QFrame):
         self.summary.style().polish(self.summary)
 
 
+def _catalog_id_from_editor(value):
+    """Keep a Horizons catalog number typed into the ID box as text.
+
+    The box is a plain line edit. ``parse_value`` reads a bare number such as
+    99942 as an int; this field stores that number's decimal text instead.
+    """
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return str(value)
+    return value
+
+
 def _format_gate_delay(gate_s: float) -> str:
     if gate_s <= 0.0:
         return "0 s"
@@ -535,6 +563,17 @@ class ParameterForm(QWidget):
                 self._normalize_observation_bodies(stage_data)
             elif name == "echo":
                 self._normalize_echo_stage(stage_data)
+            elif name == "inversion" and self._active_waveform_type() == "chirp_pulse_train":
+                stage_data.setdefault("period_selection", "predictive_joint")
+                stage_data.setdefault("doppler_estimator","spectral_moments")
+                stage_data.setdefault("compute_device","cpu")
+                stage_data.setdefault("uncertainty_method","none")
+                stage_data.setdefault("los_phase_compensation", False)
+                if "multi_harmonic_enabled" not in stage_data:
+                    stage_data["multi_harmonic_enabled"] = stage_data.get("harmonics", 1) != 1
+                # Legacy search already refined peaks; preserve existing sessions.
+                stage_data.setdefault("refine_period", True)
+                stage_data.setdefault("compare_methods", False)
             self.canvas_layout.addWidget(self._build_section(name, stage_data))
         self.canvas_layout.addStretch(1)
 
@@ -552,8 +591,39 @@ class ParameterForm(QWidget):
         if stage == "observation":
             QTimer.singleShot(0, self._connect_schedule_feedback_updates)
             QTimer.singleShot(0, self._connect_range_gate_readout)
+        self._bind_edit_notifications()
 
-    def collect(self, *, strip: bool = True) -> dict:
+    def _bind_edit_notifications(self) -> None:
+        from ..qt_compat import QCheckBox, QComboBox, QLineEdit
+
+        def notify(*_args) -> None:
+            callback = getattr(self, "on_edited", None)
+            if callback is not None:
+                callback()
+
+        for widget in self.field_widgets.values():
+            edits = []
+            if isinstance(widget, QLineEdit):
+                edits.append(widget)
+            nested = getattr(widget, "edit", None)
+            if isinstance(nested, QLineEdit):
+                edits.append(nested)
+            edits.extend(edit for edit in getattr(widget, "edits", ()) if isinstance(edit, QLineEdit))
+            for edit in edits:
+                edit.editingFinished.connect(notify)
+            box = widget.checkbox if isinstance(getattr(widget, "checkbox", None), QCheckBox) else None
+            if isinstance(widget, QCheckBox):
+                box = widget
+            if box is not None:
+                box.toggled.connect(notify)
+            combo = widget if isinstance(widget, QComboBox) else getattr(widget, "combo", None)
+            if isinstance(combo, QComboBox):
+                combo.currentIndexChanged.connect(notify)
+            unit = getattr(widget, "unit_combo", None)
+            if isinstance(unit, QComboBox):
+                unit.currentIndexChanged.connect(notify)
+
+    def collect(self, *, strip: bool = True, ignore_invalid_paths=()) -> dict:
         # Start from the live model so hidden conditional fields are not wiped.
         config = copy.deepcopy(self._config) if self._config else {}
         geodetic_rotation: dict[str, bool] = {}
@@ -561,7 +631,19 @@ class ParameterForm(QWidget):
         random_selection = None
         noise_enabled = None
         for path, widget in self.field_widgets.items():
-            value = self._widget_value(widget)
+            if path in {"inversion.spin_axis_ra_deg", "inversion.spin_axis_dec_deg"} and not widget.text().strip():
+                value = None
+            else:
+                try:
+                    value = self._widget_value(widget)
+                except NumericInputError:
+                    if path in ignore_invalid_paths:
+                        continue
+                    raise
+            if path == "observation.target.id":
+                # The ID box is plain text. A bare catalog number is still an
+                # identifier, so 99942 is stored as "99942" without quotes.
+                value = _catalog_id_from_editor(value)
             if path.endswith(".geodetic_time_dependent"):
                 geodetic_rotation[path.split(".")[1]] = bool(value)
                 continue
@@ -751,8 +833,27 @@ class ParameterForm(QWidget):
                     sections.setdefault("campaign", []).append((path, value))
             sections = self._filter_observation_sections(stage_data, sections)
         elif stage == "inversion":
+            stage_data = dict(stage_data)
+            need_phase = stage_data.get("los_phase_compensation", False) or stage_data.get("compare_methods", False)
+            need_harmonics = stage_data.get("multi_harmonic_enabled", False) or stage_data.get("compare_methods", False)
+            if stage_data.get('uncertainty_method','none')=='run_bootstrap':
+                for key,default in (('uncertainty_replicates',200),('uncertainty_seed',20261015)):
+                    loose.setdefault(key,stage_data.get(key,default))
+            if need_phase:
+                for key in ("spin_axis_ra_deg", "spin_axis_dec_deg"):
+                    loose.setdefault(key, stage_data.get(key))
+                loose.setdefault("phase_period_convention", stage_data.get("phase_period_convention", "half_rotation"))
+            if need_harmonics:
+                loose.setdefault("harmonics", stage_data.get("harmonics", 2))
             for path, value in loose.items():
-                section = "spectrum" if path.startswith(("stft_", "cpi_")) else "period_search"
+                if path in ('uncertainty_replicates','uncertainty_seed') and stage_data.get('uncertainty_method','none')!='run_bootstrap':continue
+                if path in {"spin_axis_ra_deg", "spin_axis_dec_deg", "phase_period_convention"} and not need_phase:
+                    continue
+                if path == "harmonics" and not need_harmonics:
+                    continue
+                section = ("spectrum" if path.startswith(("stft_", "cpi_")) or path in ("doppler_estimator","compute_device") else
+                           "period_enhancements" if path in INVERSION_CHIRP_ONLY - {"cpi_duration_s", "cpi_hop_duration_s", "motion_compensation", "period_time_role"}
+                           else "period_search")
                 sections.setdefault(section, []).append((path, value))
             waveform_type = self._active_waveform_type()
             cw_only = INVERSION_CW_ONLY
@@ -1059,11 +1160,13 @@ class ParameterForm(QWidget):
             label.setToolTip(tooltip)
             self.field_widgets[absolute] = widget
             if isinstance(widget, BooleanFieldWidget):
+                if stage == "inversion" and relative_path in {"los_phase_compensation", "multi_harmonic_enabled", "compare_methods"}:
+                    widget.checkbox.toggled.connect(lambda _checked, path=absolute: self._on_inversion_option_changed(path))
                 if relative_path == "scattering_spot.enabled":
                     widget.checkbox.toggled.connect(lambda _checked: self._on_spot_enabled_changed())
                 if relative_path == "noise_enabled":
                     widget.checkbox.toggled.connect(lambda _checked: self._on_noise_enabled_changed())
-                if group_name == "plan" and key in {"allow_unobservable_for_simulation", "random_selection"}:
+                if (group_name == "plan" and key in {"allow_unobservable_for_simulation", "random_selection"}) or group_name == "period_enhancements":
                     widget.checkbox.setText(text)
                     label.deleteLater()
                     grid.addWidget(widget, row, 0, 1, 2, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -1206,6 +1309,8 @@ class ParameterForm(QWidget):
             for item in choices:
                 data = "true" if item is True else "false" if item is False else str(item)
                 label = "手动坐标" if full_path == "target.state" and data == "static" else OPTION_LABELS.get(data, data)
+                if full_path=='compute_device':
+                    label={'cpu':'CPU（默认）','cuda:0':'GPU（CUDA:0）'}.get(data,data)
                 combo.addItem(label, data)
             existing = [combo.itemData(i) for i in range(combo.count())]
             if current not in existing:
@@ -1226,6 +1331,8 @@ class ParameterForm(QWidget):
                 combo.currentIndexChanged.connect(
                     lambda _index, path=full_path: self._on_spin_pole_frame_changed(path)
                 )
+            if full_path=='uncertainty_method':
+                combo.currentIndexChanged.connect(lambda _index:self._on_inversion_option_changed('inversion.uncertainty_method'))
             if full_path == "scattering_model":
                 combo.currentIndexChanged.connect(
                     lambda _index: self._on_scattering_model_changed()
@@ -1253,6 +1360,9 @@ class ParameterForm(QWidget):
                 label=f"{self._active_stage}.{full_path}",
                 integer=key in INTEGER_FIELD_KEYS,
             )
+            if key in {"spin_axis_ra_deg", "spin_axis_dec_deg"} and value is None:
+                edit.setText("")
+                edit.setPlaceholderText("需手动输入（°）")
         else:
             edit = QLineEdit(format_value(value))
         edit.setFixedHeight(CONTROL_HEIGHT)
@@ -1799,6 +1909,29 @@ class ParameterForm(QWidget):
             focus_path="echo.scattering_spot.enabled",
             preserve_scroll=True,
         )
+
+    def _on_inversion_option_changed(self, absolute_path: str) -> None:
+        def checked(key):
+            return self.field_widgets["inversion."+key].isChecked()
+        need_phase = checked("los_phase_compensation") or checked("compare_methods")
+        need_harmonics = checked("multi_harmonic_enabled") or checked("compare_methods")
+        ignore = set()
+        if not need_phase:
+            ignore.update({"inversion.spin_axis_ra_deg", "inversion.spin_axis_dec_deg"})
+        if not need_harmonics:
+            ignore.add("inversion.harmonics")
+        updated = self.collect(strip=False, ignore_invalid_paths=ignore)
+        inversion = updated.setdefault("inversion", {})
+        if inversion.get("multi_harmonic_enabled") or inversion.get("compare_methods"):
+            h = inversion.get("harmonics", 2)
+            if not isinstance(h, (int, float)) or isinstance(h, bool) or not math.isfinite(h) or h < 2:
+                h = 2
+            inversion["harmonics"] = h
+        self._config.clear()
+        self._config.update(updated)
+        self.render(self._config, self._active_stage, monostatic=self.monostatic,
+                    point_target=self.point_target, focus_path=absolute_path, preserve_scroll=True,
+                    retain_scroll_extent=True)
 
     def _on_noise_enabled_changed(self) -> None:
         # Match scattering-model toggles: commit without stripping unrelated stages.

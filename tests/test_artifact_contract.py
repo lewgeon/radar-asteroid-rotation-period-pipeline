@@ -41,9 +41,7 @@ def _write_echo(path: Path, observation_path: Path, *, pulses=2, width=4):
                 "data_layout": "pulse_adc_windows",
                 "fast_sample_count": width,
                 "fast_sample_rate_hz": 10.0,
-                "observation_info_sha256": hashlib.sha256(
-                    observation_path.read_bytes()
-                ).hexdigest(),
+                "observation_info_identity": pipeline.artifact_identity(observation_path),
             }
         ),
     )
@@ -71,14 +69,14 @@ class ArtifactContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "观测计划为 252 列，回波为 251 列"):
                 pipeline.validate_observation_echo_contract(observation, echo)
 
-    def test_same_shape_but_different_observation_hash_is_rejected(self):
+    def test_same_shape_but_changed_observation_identity_is_rejected(self):
         with scratch_directory("artifact_pair_hash") as directory:
             observation = directory / "observation_info.npz"
             echo = directory / "echo.npz"
             _write_observation(observation, width=4, revision=1)
             _write_echo(echo, observation, width=4)
             _write_observation(observation, width=4, revision=2)
-            with self.assertRaisesRegex(ValueError, "observation_info_sha256"):
+            with self.assertRaisesRegex(ValueError, "observation_info_identity"):
                 pipeline.validate_observation_echo_contract(observation, echo)
 
     def test_fractional_fast_sample_metadata_is_rejected(self):

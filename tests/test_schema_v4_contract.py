@@ -560,7 +560,7 @@ class SchemaV4ContractTests(unittest.TestCase):
             _write_stub_observation(run_dir / "observation_info.npz")
             _write_stub_echo(run_dir / "echo" / "echo.npz")
             prepared = pipeline.prepare_run(config, run_dir=run_dir, through_stage="echo")
-            observation_sha = pipeline.file_sha256(prepared["observation_output"])
+            observation_sha = pipeline.artifact_identity(prepared["observation_output"])
             echo_proj = pipeline.echo_dependency_projection(
                 prepared["echo"], observation_sha, config_path=None
             )
@@ -581,7 +581,7 @@ class SchemaV4ContractTests(unittest.TestCase):
             )
             self.assertFalse(allowed.reusable)
 
-    def test_matching_fingerprint_without_output_hash_is_not_silent_reuse(self):
+    def test_matching_fingerprint_without_output_hash_can_reuse(self):
         config = self._base()
         with scratch_directory("reuse_missing_hash") as tmp:
             run_dir = Path(tmp)
@@ -599,9 +599,8 @@ class SchemaV4ContractTests(unittest.TestCase):
                 },
             )
             decision = pipeline.check_reusable_artifact(prepared, artifact_stage="echo")
-            self.assertFalse(decision.reusable)
-            self.assertTrue(decision.requires_confirmation)
-            self.assertIn("缺少文件哈希", decision.reason)
+            self.assertTrue(decision.reusable)
+            self.assertFalse(decision.requires_confirmation)
             allowed = pipeline.check_reusable_artifact(
                 prepared, artifact_stage="echo", allow_legacy=True
             )
@@ -621,7 +620,7 @@ class SchemaV4ContractTests(unittest.TestCase):
                 run_dir=run_dir,
                 through_stage="echo",
             )
-            observation_sha = pipeline.file_sha256(echo_prepared["observation_output"])
+            observation_sha = pipeline.artifact_identity(echo_prepared["observation_output"])
             echo_proj = pipeline.echo_dependency_projection(
                 echo_prepared["echo"],
                 observation_sha,
@@ -667,7 +666,7 @@ class SchemaV4ContractTests(unittest.TestCase):
                 {
                     "echo": {
                         "fingerprint": None,
-                        "output_sha256": pipeline.file_sha256(echo),
+                        "output_identity": pipeline.artifact_identity(echo),
                     }
                 },
             )

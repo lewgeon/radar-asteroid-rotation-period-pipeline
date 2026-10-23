@@ -1,0 +1,99 @@
+{
+  "scope": "Analytic-model checks only; no EV5 accuracy claims.",
+  "date": "2026-10-20",
+  "executed_utc": "2026-10-20T07:15:11.239542+00:00",
+  "numpy": "1.24.3",
+  "sympy": "1.14.0",
+  "symbolic_derivative_and_ratio": "exact identities verified",
+  "local_information_fraction_norm": {
+    "fixed_waveform": 0.9965952760422748,
+    "free_geometry_quadratures": 4.534644379839164e-16,
+    "real_amplitude_only": 0.9630104942278199
+  },
+  "same_power_different_covariance": [
+    {
+      "sign": 1,
+      "mean": [
+        2.0,
+        2.0
+      ],
+      "cross_covariance": 1.25
+    },
+    {
+      "sign": -1,
+      "mean": [
+        2.0,
+        2.0
+      ],
+      "cross_covariance": -0.75
+    }
+  ],
+  "unbiased_profile_score_quadrature": [
+    {
+      "sigma": 0.2,
+      "max_corrected_expected_score_error": 1.0658141036401503e-14,
+      "raw_expected_score_min_angle": 1.3338,
+      "corrected_expected_score_min_angle": 1.324,
+      "minimum_Khat_eigenvalue": 0.0435995149919006
+    },
+    {
+      "sigma": 1.0,
+      "max_corrected_expected_score_error": 8.881784197001252e-15,
+      "raw_expected_score_min_angle": 1.4318,
+      "corrected_expected_score_min_angle": 1.324,
+      "minimum_Khat_eigenvalue": -3.8637993119816056
+    },
+    {
+      "sigma": 2.0,
+      "max_corrected_expected_score_error": 2.6645352591003757e-14,
+      "raw_expected_score_min_angle": 1.52,
+      "corrected_expected_score_min_angle": 1.324,
+      "minimum_Khat_eigenvalue": -37.05380205616615
+    }
+  ],
+  "independent_noise_scale_calibration": {
+    "noise_scale_nu": 1.7,
+    "independent_complex_calibration_modes": 1,
+    "max_corrected_expected_score_error": 2.842170943040401e-14,
+    "max_plugin_expected_score_bias": 22.48522303603636,
+    "variance_estimator_mean": 2.8899999999999997,
+    "true_scale_estimator_variance": 2.8899999999999997
+  },
+  "regularized_varpro": {
+    "full_jacobian_max_abs_difference": 8.194211975620647e-11,
+    "omitted_term_norm": 0.5852859262459401,
+    "profile_identity_difference": 3.9968028886505635e-15
+  },
+  "fixture_specification": {
+    "geometry": {
+      "seed": 20261020,
+      "samples": 71,
+      "times": "sorted uniform(-1,1)",
+      "omega": 7.3,
+      "cosine_coefficient": 1.2,
+      "sine_coefficient": 0.7
+    },
+    "quadrature": {
+      "rule": "tensor Gauss-Hermite, 3 nodes per real standard normal coordinate",
+      "Q": "diag(1,0), diag(0,1)",
+      "signal": "[1, 2*exp(0.7j)]",
+      "C1": "[[1, 0.2+0.1j], [0.2-0.1j, 2]]",
+      "B": "I-vv^T; v=[cos(angle),sin(angle)]",
+      "angles": "linspace(0.05,1.52,151)",
+      "known_noise_scales_sigma": [
+        0.2,
+        1,
+        2
+      ]
+    },
+    "varpro": {
+      "times": "linspace(-1,1,29)",
+      "data": "sin(4.6*t)+0.2*cos(7*t)+0.15*t",
+      "design": "[1,cos(omega*t),sin(omega*t)]",
+      "penalty_augmented_block": "diag(0,0.4,0.4)",
+      "omega": 4.1,
+      "central_difference_step": 1e-05
+    }
+  },
+  "script_sha256": "2fd1a49e2ed4612fb9cf2c3296449f59a520c67c352b493d5537c56c1b6a91f8"
+}

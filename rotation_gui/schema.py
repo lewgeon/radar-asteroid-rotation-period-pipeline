@@ -34,12 +34,17 @@ GROUP_LABELS = {
     "geometry": "几何求解",
     "spectrum": "时频分析",
     "period_search": "周期搜索",
+    "period_enhancements": "可选反演功能",
     "echo_options": "回波输出",
     "通用参数": "通用参数",
     "general": "通用参数",
 }
 
 CHOICES = {
+    "period_selection": ("predictive_joint", "legacy_consensus"),
+    "compute_device":("cpu","cuda:0"),
+    "uncertainty_method":("none","run_bootstrap"),
+    "phase_period_convention": ("half_rotation", "full_rotation"),
     "state": ("static", "linear", "geodetic_fixed", "astropy_geodetic", "horizons_vectors"),
     "device": ("auto", "cuda:0", "cpu"),
     "dtype": ("float32", "float64"),
@@ -53,6 +58,7 @@ CHOICES = {
     "intrapulse_motion_model": ("per_pulse_linear", "frozen"),
     "motion_compensation": ("auto", "none", "centroid_geometry"),
     "period_time_role": ("scatter_centroid", "receive_centroid"),
+    "doppler_estimator": ("spectral_moments", "narrowband_lag"),
     "baseband_convention": ("zero_to_bandwidth", "centered"),
 }
 
@@ -64,6 +70,13 @@ OBSERVATION_BODY_GROUPS = ("target", "transmitter", "receiver")
 STATION_GROUPS = ("transmitter", "receiver")
 
 OPTION_LABELS = {
+    "predictive_joint": "留出预测融合（默认）",
+    "legacy_consensus": "候选投票（旧版）",
+    "run_bootstrap":"按Run重采样（实验性）",
+    "spectral_moments":"FFT功率谱法（默认）",
+    "narrowband_lag":"相关法（实验性）",
+    "half_rotation": "半周期特征（两倍方位补偿）",
+    "full_rotation": "完整自转周期（一倍方位补偿）",
     "true": "是",
     "false": "否",
     "continuous_wave": "连续波",
@@ -226,11 +239,35 @@ FIELD_LABELS = {
     "motion_compensation": "运动补偿",
     "period_time_role": "周期时标",
     "harmonics": "谐波数",
+    "los_phase_compensation": "视线相位补偿",
+    "multi_harmonic_enabled": "多谐波特征拟合",
+    "period_selection": "周期融合方法",
+    "refine_period": "周期局部细化",
+    "compare_methods": "比较全部功能组合",
+    "spin_axis_ra_deg": "自转轴赤经",
+    "spin_axis_dec_deg": "自转轴赤纬",
+    "phase_period_convention": "补偿周期约定",
     "cpi_duration_s": "CPI 时长",
+    "doppler_estimator":"多普勒特征计算方法",
+    "compute_device":"反演计算设备",
+    "uncertainty_method":"周期误差评估",
+    "uncertainty_replicates":"重采样次数",
+    "uncertainty_seed":"误差评估随机种子",
     "cpi_hop_duration_s": "CPI 步进时长",
 }
 
 FIELD_TOOLTIPS = {
+    "compute_device":"CPU为数值参考；GPU加速Chirp脉压、Fourier距离对齐、慢时间FFT及周期网格搜索（包括Run重采样）。局部周期细化、特征归约和病态网格点仍用CPU。无CUDA时明确记录CPU回退；显存不足报错，不静默降低精度。设备不同的科学缓存分开保存。",
+    "uncertainty_method":"默认不额外重采样。启用后按整个Run保留CPI相关性，重新搜索所有周期并执行原共识；输出条件性局部标准误和经验95%区间，不把未校准区间称为最终3σ。重复次数越多越慢。",
+    "doppler_estimator":"只改变CPI的多普勒质心和宽度。默认从FFT功率谱计算加权平均和标准差，包含Hann窗展宽；实验相关法比较相隔若干脉冲的复回波，只适用于窄频、高相干信号且至少12脉冲。检查失败时拒绝该窗口的两个多普勒值，其他特征与FFT图不变；尚未证明它能普遍提高周期精度。",
+    "los_phase_compensation": "用显式输入的自转轴与回波携带的收发视线修正经度相位；不读取形状或初相位。仅适用于 Chirp 散射时标，不能补偿全部双站几何变化。",
+    "spin_axis_ra_deg": "独立反演先验：ICRS 自转轴赤经，0–360°；不自动复制仿真参数。",
+    "spin_axis_dec_deg": "独立反演先验：ICRS 自转轴赤纬，−90–90°；不自动复制仿真参数。",
+    "phase_period_convention": "半周期特征使用两倍经度补偿，完整自转周期使用一倍；由研究者选择，不读取形状真值。",
+    "multi_harmonic_enabled": "用多个正弦/余弦分量拟合特征随时间的变化，不改变发射 Chirp。关闭时只使用一个谐波。",
+    "period_selection": "默认在相同候选周期上比较各特征的整Run留出预测，以通道中位数抑制少数失配特征；保留五项独立结果。预测评分不等于置信概率，Run不足时会明确报告。旧版候选投票仅用于对照。",
+    "refine_period": "在网格候选邻域连续细化周期；关闭时返回网格候选。旧配置默认开启，以保留原有行为。",
+    "compare_methods": "对同一组特征比较 2×2×2 共八种组合，需要输入自转轴和至少两个谐波。额外耗时；拟合分数不代表周期精度。",
     "chunk_size": "连续波网格回波每次送入计算的时间样点数。只影响速度和显存，不改变物理模型。",
     "facet_chunk_size": "网格 Chirp 每次送入计算的面元数。只影响速度和显存，不改变物理模型；留空则按面元总数与 1280 中的较小值解析。",
     "fast_sample_chunk_size": "网格 Chirp 每次送入计算的脉冲–采样点对数。只影响速度和显存，不改变物理模型；留空则按一块约 200 万个面元—样点自动解析。",
@@ -308,8 +345,10 @@ NUMERIC_FIELD_KEYS = frozenset(
         "stft_overlap_fraction",
         "period_grid_size",
         "harmonics",
+        "spin_axis_ra_deg", "spin_axis_dec_deg",
         "run_count",
         "random_seed",
+        "uncertainty_replicates", "uncertainty_seed",
     }
 )
 
@@ -325,6 +364,7 @@ INTEGER_FIELD_KEYS = frozenset(
         "harmonics",
         "run_count",
         "random_seed",
+        "uncertainty_replicates", "uncertainty_seed",
     }
 )
 
