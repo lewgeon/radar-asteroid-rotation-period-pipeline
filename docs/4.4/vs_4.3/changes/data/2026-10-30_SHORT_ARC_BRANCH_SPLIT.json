@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-30",
+  "scope": "Branch isolation only; no new IQ, Monte Carlo, precision or speed claim",
+  "research_root_commit": "a7d3be91055ed7a0d9a400ac51258e42ed470631",
+  "research_inversion_commit": "c4399c8774d18c81df5095267fe94394671135f8",
+  "tests": {
+    "passed": 67,
+    "skipped": 4,
+    "seconds": 67.11,
+    "scope": "related regression, no opt-in complete data searches"
+  },
+  "independent_integration_tests": {
+    "passed": 14,
+    "seconds": 5.71
+  },
+  "source_identity": {
+    "src/predictive_energy.py": {
+      "normalized_sha256": "ed90cbbfecf719f161c57864ae2ebae89168a17c6c47f2fc1b6af976dcbd0514",
+      "matches_research_snapshot": true
+    },
+    "src/spherical_response.py": {
+      "normalized_sha256": "af6e3706e435b08447136c7e810c95a3368337a41663f3a5b0ebc55c78525fe1",
+      "matches_research_snapshot": true
+    },
+    "src/precision_selection.py": {
+      "normalized_sha256": "cf9451b3e893c0fc084a73a9ce8dd294cd166306c2b6844b38958170e794b746",
+      "matches_research_snapshot": true
+    },
+    "src/joint_period.py": {
+      "unchanged_from_4_3": true
+    },
+    "src/period_consensus.py": {
+      "unchanged_from_4_3": true
+    }
+  },
+  "archive_checks": {
+    "root_research_files_readable": 89,
+    "inversion_research_files_readable": 3,
+    "gmpy2_optional_dependency_absent": true,
+    "python_syntax": "pass"
+  }
+}

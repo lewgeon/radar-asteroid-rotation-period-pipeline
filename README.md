@@ -2,19 +2,25 @@
 
 [English](README_EN.md)
 
+
 **4.3已完成本轮收尾**；进一步算法优化与尚未完成的事项归入[4.4](docs/4.4/README.md)。项目已连接视线/光行时解算、回波仿真和自转周期反演，并提供GUI与命令行入口。已完成椭球、EV5网格控制及EV5名义参数的仿真实验；真实雷达观测验证、跨场景精度和最终误差校准仍在后续范围内。
+
+4.4已新增正预测增益融合和已知极轴球面响应两个显式选项，保留原默认策略。配置、自动阶数、拒绝条件和验证边界见[精度策略说明](docs/4.4/PERIOD_PRECISION_OPTIONS.md)。新选项不提供未经校准的总误差区间，低SNR改善不作普遍保证。
+
 
 ## 先读哪份
 
 | 想了解什么 | 推荐阅读 |
 | --- | --- |
+| 检查光变合成核心并开展同窗口精度比较 | **[独立光学／雷达对照与改造计划书](docs/4.4/vs_4.3/plans/OPTICAL_RADAR_BENCHMARK_PLAN.md)**：OBJ共享场景、convexinv／ADAM适配、强基线、短窗假说和验收门槛；尚未实施 |
+| 完整阅读本阶段实验成果与带图报告 | **[阶段实验报告](docs/4.4/vs_4.3/experiments/reports/2026-10-24_STAGE_EXPERIMENT_REPORT.md)** |
 | 已实现效果、EV5结果、仍存在的问题 | **[4.3项目现状总览](docs/4.3/PROJECT_OVERVIEW.md)** |
 | 文档如何分类、下一步读什么 | [4.3文档导航](docs/4.3/README.md) |
 | 如何操作与查看结果 | [GUI用户手册](docs/4.3/GUI_USER_MANUAL.md) |
 | 信号如何变成周期 | [Chirp完整链路](docs/4.3/CHIRP_INVERSION_WALKTHROUGH.md)、[反演算法](docs/4.3/INVERSION_ALGORITHM.md) |
 | 实验数值、负结果与复现 | [按阶段查证据](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.3/vs_4.2/experiments/README.md#reports)、[事前实验协议](EXPERIMENTS.md) |
 | 下一步研究与实现缺口 | [当前开放问题](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.4/vs_4.3/plans/OPEN_ISSUES.md#current-issues) |
-| 接手EV5精度改进编码 | **[独立接手说明](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.4/vs_4.3/plans/EV5_PRECISION_IMPLEMENTATION_HANDOFF.md)**，无需通读历史研究与计划 |
+| 查阅已完成的EV5精度接入合同 | [A/B接入说明](docs/4.4/vs_4.3/plans/EV5_PRECISION_IMPLEMENTATION_HANDOFF.md)，保留移植时的历史合同 |
 
 项目包含三个独立子模块：`observation/`生成 `observation_info.npz`，`echo/`生成 `echo.npz`，`inversion/`提取特征并估计周期；`pipeline.py`串联三者。配置与保存契约为schema v4，字段和数据归属见[架构](docs/4.3/ARCHITECTURE_V4.md)。旧版本记录从[4.2快照](docs/4.2/README.md)进入。
 

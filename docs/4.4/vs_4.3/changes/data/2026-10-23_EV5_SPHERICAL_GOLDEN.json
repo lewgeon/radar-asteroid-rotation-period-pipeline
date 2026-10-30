@@ -1,0 +1,112 @@
+{
+  "started_utc": "2026-10-23T07:51:36.833095+00:00",
+  "elapsed_s": 360.9178301,
+  "command": "conda run --no-capture-output -n pytorch python -m unittest tests.test_spherical_response.SphericalResponseTests.test_frozen_ev5_clean_search -v",
+  "environment": {
+    "python": "3.9.23",
+    "numpy": "1.24.3",
+    "EV5_SPHERICAL_GOLDEN": "1",
+    "EV5_SPHERICAL_EVIDENCE_NAME": "spherical_golden_final.json",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1"
+  },
+  "source": {
+    "path": "inversion/src/spherical_response.py",
+    "sha256": "af6e3706e435b08447136c7e810c95a3368337a41663f3a5b0ebc55c78525fe1"
+  },
+  "cases": [
+    {
+      "case": "70m",
+      "inputs": [
+        {
+          "path": "tmp/ev5_precision_solution_20261020/geometry/70m_inputs.npz",
+          "sha256": "3146a7a2130e21808c4568788a5bd6f327bde5ff95ff12c260db48936d2a769a"
+        },
+        {
+          "path": "runs/ev5_snr_20261016_70m/echo/echo.npz",
+          "sha256": "1a9ec5e4cdd2b3ab045fd760267b598e67f4c82a2cf3cb4ccb29f8a0c68ae9f6"
+        }
+      ],
+      "actual": {
+        "period_s": 10801.701662129739,
+        "degree": 4,
+        "score": 0.9073085912889667,
+        "alpha_by_feature": [
+          10.0,
+          10.0,
+          1e-08,
+          0.1,
+          10.0
+        ]
+      },
+      "expected": {
+        "period_s": 10801.701662223462,
+        "cv_mean": 0.9073085912889635,
+        "per_feature_min_cv": [
+          1.0092042977189457,
+          1.0773933344087852,
+          0.8314599910212574,
+          0.6745094061512936,
+          0.9439759271445356
+        ],
+        "alpha_by_feature": [
+          10.0,
+          10.0,
+          1e-08,
+          0.1,
+          10.0
+        ],
+        "evaluation_only_relative_error_pct": 0.015756131698729803
+      },
+      "period_difference_s": -9.372342901770025e-08,
+      "score_difference": 3.219646771412954e-15
+    },
+    {
+      "case": "400m",
+      "inputs": [
+        {
+          "path": "tmp/ev5_precision_solution_20261020/geometry/400m_inputs.npz",
+          "sha256": "2ab58e50f1b0dcca94c10482b87c8f4ae46879ad8ff729ac4d9e9326b6c5106f"
+        },
+        {
+          "path": "runs/ev5_snr_longcpi_20261016_400m/echo/echo.npz",
+          "sha256": "a42430a141a72e1f60e4d38179023e258a354e32e0e173eb21057f0231ffc538"
+        }
+      ],
+      "actual": {
+        "period_s": 13405.246840937803,
+        "degree": 6,
+        "score": 0.5397977099705364,
+        "alpha_by_feature": [
+          0.1,
+          0.1,
+          0.1,
+          0.1,
+          0.001
+        ]
+      },
+      "expected": {
+        "period_s": 13405.246840955224,
+        "cv_mean": 0.5397977099705363,
+        "per_feature_min_cv": [
+          0.7866355188365572,
+          0.5085612927323768,
+          0.6830659282731627,
+          0.5630306732897968,
+          0.15769513672078786
+        ],
+        "alpha_by_feature": [
+          0.1,
+          0.1,
+          0.1,
+          0.1,
+          0.001
+        ],
+        "evaluation_only_relative_error_pct": 0.03544488474851448
+      },
+      "period_difference_s": -1.7420461517758667e-08,
+      "score_difference": 1.1102230246251565e-16
+    }
+  ]
+}

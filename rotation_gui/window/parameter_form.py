@@ -834,7 +834,8 @@ class ParameterForm(QWidget):
             sections = self._filter_observation_sections(stage_data, sections)
         elif stage == "inversion":
             stage_data = dict(stage_data)
-            need_phase = stage_data.get("los_phase_compensation", False) or stage_data.get("compare_methods", False)
+            need_phase = stage_data.get("los_phase_compensation", False) or stage_data.get("compare_methods", False) or stage_data.get('period_selection') == 'spherical_response'
+            need_phase_convention = (stage_data.get('period_selection') != 'spherical_response' and stage_data.get('los_phase_compensation', False)) or stage_data.get('compare_methods', False)
             need_harmonics = stage_data.get("multi_harmonic_enabled", False) or stage_data.get("compare_methods", False)
             if stage_data.get('uncertainty_method','none')=='run_bootstrap':
                 for key,default in (('uncertainty_replicates',200),('uncertainty_seed',20261015)):
@@ -842,12 +843,15 @@ class ParameterForm(QWidget):
             if need_phase:
                 for key in ("spin_axis_ra_deg", "spin_axis_dec_deg"):
                     loose.setdefault(key, stage_data.get(key))
-                loose.setdefault("phase_period_convention", stage_data.get("phase_period_convention", "half_rotation"))
+                if need_phase_convention:
+                    loose.setdefault("phase_period_convention", stage_data.get("phase_period_convention", "half_rotation"))
             if need_harmonics:
                 loose.setdefault("harmonics", stage_data.get("harmonics", 2))
             for path, value in loose.items():
                 if path in ('uncertainty_replicates','uncertainty_seed') and stage_data.get('uncertainty_method','none')!='run_bootstrap':continue
                 if path in {"spin_axis_ra_deg", "spin_axis_dec_deg", "phase_period_convention"} and not need_phase:
+                    continue
+                if path == 'phase_period_convention' and not need_phase_convention:
                     continue
                 if path == "harmonics" and not need_harmonics:
                     continue
@@ -1333,6 +1337,8 @@ class ParameterForm(QWidget):
                 )
             if full_path=='uncertainty_method':
                 combo.currentIndexChanged.connect(lambda _index:self._on_inversion_option_changed('inversion.uncertainty_method'))
+            if full_path=='period_selection':
+                combo.currentIndexChanged.connect(lambda _index:self._on_period_selection_changed())
             if full_path == "scattering_model":
                 combo.currentIndexChanged.connect(
                     lambda _index: self._on_scattering_model_changed()
@@ -1910,10 +1916,18 @@ class ParameterForm(QWidget):
             preserve_scroll=True,
         )
 
+    def _on_period_selection_changed(self) -> None:
+        current = self.field_widgets['inversion.period_selection'].currentData()
+        previous = self._config.get('inversion', {}).get('period_selection', 'predictive_joint')
+        if (current == 'spherical_response') != (previous == 'spherical_response'):
+            self._on_inversion_option_changed('inversion.period_selection')
+
     def _on_inversion_option_changed(self, absolute_path: str) -> None:
         def checked(key):
-            return self.field_widgets["inversion."+key].isChecked()
-        need_phase = checked("los_phase_compensation") or checked("compare_methods")
+            widget=self.field_widgets.get("inversion."+key)
+            return widget.isChecked() if widget is not None else bool(self._config.get('inversion',{}).get(key,False))
+        spherical = self.field_widgets['inversion.period_selection'].currentData() == 'spherical_response'
+        need_phase = checked("los_phase_compensation") or checked("compare_methods") or spherical
         need_harmonics = checked("multi_harmonic_enabled") or checked("compare_methods")
         ignore = set()
         if not need_phase:

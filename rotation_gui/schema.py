@@ -41,7 +41,7 @@ GROUP_LABELS = {
 }
 
 CHOICES = {
-    "period_selection": ("predictive_joint", "legacy_consensus"),
+    "period_selection": ("predictive_joint", "legacy_consensus", "predictive_skill_energy", "spherical_response"),
     "compute_device":("cpu","cuda:0"),
     "uncertainty_method":("none","run_bootstrap"),
     "phase_period_convention": ("half_rotation", "full_rotation"),
@@ -71,6 +71,8 @@ STATION_GROUPS = ("transmitter", "receiver")
 
 OPTION_LABELS = {
     "predictive_joint": "留出预测融合（默认）",
+    "predictive_skill_energy": "正预测增益融合（自动H1/2/4/8）",
+    "spherical_response": "球面响应（已知极轴，自动L）",
     "legacy_consensus": "候选投票（旧版）",
     "run_bootstrap":"按Run重采样（实验性）",
     "spectral_moments":"FFT功率谱法（默认）",
@@ -265,7 +267,7 @@ FIELD_TOOLTIPS = {
     "spin_axis_dec_deg": "独立反演先验：ICRS 自转轴赤纬，−90–90°；不自动复制仿真参数。",
     "phase_period_convention": "半周期特征使用两倍经度补偿，完整自转周期使用一倍；由研究者选择，不读取形状真值。",
     "multi_harmonic_enabled": "用多个正弦/余弦分量拟合特征随时间的变化，不改变发射 Chirp。关闭时只使用一个谐波。",
-    "period_selection": "默认在相同候选周期上比较各特征的整Run留出预测，以通道中位数抑制少数失配特征；保留五项独立结果。预测评分不等于置信概率，Run不足时会明确报告。旧版候选投票仅用于对照。",
+    "period_selection": "默认使用整Run留出预测的通道中位数。正预测增益融合固定五项完整特征，自动选择H1/2/4/8及8倍频率网格；球面响应需要显式极轴、100Run×5CPI和近单站几何，自动选择L1/2/3/4/6。新策略采用固定细化协议，多谐波数和细化勾选仅控制独立特征对照；尚不支持新策略重采样误差区间，低SNR可能退化。",
     "refine_period": "在网格候选邻域连续细化周期；关闭时返回网格候选。旧配置默认开启，以保留原有行为。",
     "compare_methods": "对同一组特征比较 2×2×2 共八种组合，需要输入自转轴和至少两个谐波。额外耗时；拟合分数不代表周期精度。",
     "chunk_size": "连续波网格回波每次送入计算的时间样点数。只影响速度和显存，不改变物理模型。",

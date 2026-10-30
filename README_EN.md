@@ -2,19 +2,25 @@
 
 [中文](README.md)
 
+
 **Version 4.3 is closed for this round**; further algorithm development and remaining work are assigned to [4.4](docs/4.4/README.md). The pipeline connects observation geometry and light-time solving, echo simulation, period estimation, and GUI result inspection. Ellipsoid controls, an EV5 mesh control, and a nominal-parameter EV5 simulation have been completed. Measured-radar validation, accuracy across scenes, and calibration of final-period uncertainty remain open.
+
+Version 4.4 adds explicit positive predictive skill energy and known-pole spherical response selectors while retaining the previous default. See [precision options](docs/4.4/PERIOD_PRECISION_OPTIONS.md) (Chinese) for configuration, automatic model orders, rejection conditions and validation scope. These options do not supply calibrated total-error intervals or guarantee improvement at low SNR.
+
 
 ## Where to start
 
 | Purpose | Read |
 | --- | --- |
+| Compare optical and radar period accuracy within the same window | **[Standalone benchmark and modification plan](docs/4.4/vs_4.3/plans/OPTICAL_RADAR_BENCHMARK_PLAN.md)** (Chinese): shared OBJ scene, convexinv/ADAM adapters, strong baselines, short-window hypothesis and acceptance gates; not yet implemented |
+| Read the integrated stage report with figures | **[Stage experiment report](docs/4.4/vs_4.3/experiments/reports/2026-10-24_STAGE_EXPERIMENT_REPORT.md)**, in Chinese |
 | Current capabilities, results and limitations | **[4.3 project status overview](docs/4.3/PROJECT_OVERVIEW.md)** (Chinese) |
 | Find the right document | [Documentation guide](docs/4.3/README.md) |
 | Run the GUI and inspect results | [GUI manual](docs/4.3/GUI_USER_MANUAL.md) |
 | Understand the signal chain and estimator | [Chirp walkthrough](docs/4.3/CHIRP_INVERSION_WALKTHROUGH.md), [algorithm](docs/4.3/INVERSION_ALGORITHM.md) |
 | Verify results and reproduce experiments | [Evidence by stage](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.3/vs_4.2/experiments/README.md#reports), [experiment protocol](EXPERIMENTS.md) |
 | Find remaining work | [Current open issues](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.4/vs_4.3/plans/OPEN_ISSUES.md#current-issues) |
-| Implement the EV5 precision improvements | **[Standalone implementation handoff](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.4/vs_4.3/plans/EV5_PRECISION_IMPLEMENTATION_HANDOFF.md)** (Chinese); the full historical research and plan are optional references |
+| Check the completed EV5 precision integration contract | [A/B integration handoff](docs/4.4/vs_4.3/plans/EV5_PRECISION_IMPLEMENTATION_HANDOFF.md) (Chinese), retained as a historical contract |
 
 The overview distinguishes the ellipsoid's 5400 s repetition period from the EV5 controls' full spin periods. The 70 m mesh control is a negative result; the 400 m nominal EV5 simulation meets the 1% target under its stated assumptions but does not establish sustained 0.1% accuracy. Neither is measured radar data. Use the linked evidence for exact values, configurations and noise thresholds.
 

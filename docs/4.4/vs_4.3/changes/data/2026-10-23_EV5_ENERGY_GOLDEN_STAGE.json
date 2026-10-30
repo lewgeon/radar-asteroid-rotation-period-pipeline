@@ -1,0 +1,114 @@
+{
+  "utc": "2026-10-23T07:42:57.849298+00:00",
+  "command": "conda run -n pytorch python scripts/verify_ev5_precision_clean.py --output tmp\\ev5_production_acceptance\\energy_golden.json",
+  "environment": {
+    "conda_env": "pytorch",
+    "numpy": "1.24.3",
+    "python": "3.9.23 (main, Jun  5 2025, 13:25:08) [MSC v.1929 64 bit (AMD64)]",
+    "blas_threads": 1
+  },
+  "source_sha256": {
+    "scripts\\verify_ev5_precision_clean.py": "6b5d680bf2fd59e2884d25f6a21d1552ea01a4aa7d6385f9ac3e99df1f6964f1",
+    "inversion\\src\\predictive_energy.py": "ed90cbbfecf719f161c57864ae2ebae89168a17c6c47f2fc1b6af976dcbd0514"
+  },
+  "golden_sha256": "afd476ec134a4e0231ae547b72e857f1feeaa4600c2c60d6ce46b7ccec8b796f",
+  "rows": [
+    {
+      "case": "70m",
+      "input": "original_value",
+      "period_s": 10806.327576569362,
+      "score": 0.1392108246217193,
+      "h": 2,
+      "wall_seconds": 95.5571314,
+      "input_sha256": {
+        "runs\\ev5_snr_20261016_70m\\inversion\\period_observables.npz": "29629f4a0aa2c655ae923a7e2d39d7aa4a2601d19a619ec26f06dc9e4d47bafa",
+        "tmp\\receiver_snr_ev5_70m_20261016\\clean_features.npy": "a031e5bc9b64aa70f175c35b168f09992543bb3150d3327e26c1a423f8f709eb"
+      },
+      "frozen": {
+        "trial_index": 0,
+        "h": 2,
+        "pool": "positive_skill_squared",
+        "period_s": 10806.327574596313,
+        "score": -0.13921082529224488,
+        "local_minima_count": 5,
+        "cpu_svd_score_difference": 8.326672684688674e-17,
+        "channel_errors": [
+          1.0480065066616935,
+          1.0158706197397023,
+          1.0045570477067247,
+          0.6369878588521363,
+          0.9137850902019354
+        ]
+      },
+      "period_difference_s": 1.973048711079173e-06,
+      "score_difference": 6.705255795047549e-10,
+      "period_h_passed": true,
+      "identical_input_score_passed": null
+    },
+    {
+      "case": "70m",
+      "input": "frozen_clean_features",
+      "period_s": 10806.327573135564,
+      "score": 0.13921082529224485,
+      "h": 2,
+      "wall_seconds": 92.2862787,
+      "input_sha256": {
+        "runs\\ev5_snr_20261016_70m\\inversion\\period_observables.npz": "29629f4a0aa2c655ae923a7e2d39d7aa4a2601d19a619ec26f06dc9e4d47bafa",
+        "tmp\\receiver_snr_ev5_70m_20261016\\clean_features.npy": "a031e5bc9b64aa70f175c35b168f09992543bb3150d3327e26c1a423f8f709eb"
+      },
+      "frozen": {
+        "trial_index": 0,
+        "h": 2,
+        "pool": "positive_skill_squared",
+        "period_s": 10806.327574596313,
+        "score": -0.13921082529224488,
+        "local_minima_count": 5,
+        "cpu_svd_score_difference": 8.326672684688674e-17,
+        "channel_errors": [
+          1.0480065066616935,
+          1.0158706197397023,
+          1.0045570477067247,
+          0.6369878588521363,
+          0.9137850902019354
+        ]
+      },
+      "period_difference_s": 1.4607485354645178e-06,
+      "score_difference": 2.7755575615628914e-17,
+      "period_h_passed": true,
+      "identical_input_score_passed": true
+    },
+    {
+      "case": "400m",
+      "input": "original_value",
+      "period_s": 13408.50262634556,
+      "score": 1.0193027944973916,
+      "h": 8,
+      "wall_seconds": 191.5822819,
+      "input_sha256": {
+        "runs\\ev5_snr_longcpi_20261016_400m\\inversion\\period_observables.npz": "fefc4d57120099766adfb688fefc9b0daf9bbb1f45121c32a26e4304eaf2559b",
+        "tmp\\receiver_snr_ev5_400m_20261016\\clean_features.npy": "f19c3fde94dfb4f100a91cd96a0e5cb68425ee357a3c6d306243d6c421044955",
+        "runs\\ev5_snr_longcpi_20261016_400m\\echo\\echo.npz": "a42430a141a72e1f60e4d38179023e258a354e32e0e173eb21057f0231ffc538"
+      },
+      "frozen": {
+        "trial_index": 0,
+        "h": 8,
+        "pool": "positive_skill_squared",
+        "period_s": 13408.502629383285,
+        "score": -1.019302783460164,
+        "local_minima_count": 5,
+        "cpu_svd_score_difference": 0.0,
+        "channel_errors": [
+          0.9810950652803672,
+          0.5192828558918056,
+          0.6332861216447527,
+          0.7442547734787082,
+          0.23320685657923498
+        ]
+      },
+      "period_difference_s": 3.037725036847405e-06,
+      "score_difference": 1.1037227576338182e-08,
+      "period_h_passed": true,
+      "identical_input_score_passed": null
+    }
+  ]
+}

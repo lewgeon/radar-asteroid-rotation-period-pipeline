@@ -1,0 +1,463 @@
+{
+  "record": {
+    "measured_utc": "2026-10-23T07:49:52.256512+00:00",
+    "elapsed_s": 3.0118454999999997,
+    "baseline_source_sha256": "88529e144da2df558c128d6cb949a3830f46c501c5011be589fdeb5066d09770",
+    "current_source_sha256": "af6e3706e435b08447136c7e810c95a3368337a41663f3a5b0ebc55c78525fe1",
+    "change": "Pass the already safely normalized channels to _ResponseScore instead of original y.",
+    "scope": "Objective scan only: 17 frequencies over full domain plus each degree frozen optimum, all 5 degrees, two clean inputs, 3 scales. Full search belongs to baseline source evidence.",
+    "command": "conda run --no-capture-output -n pytorch python tmp/ev5_production_acceptance/spherical_scale_scan.py",
+    "environment": {
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "cases": [
+      {
+        "case": "70m",
+        "degree_results": [
+          {
+            "degree": 1,
+            "frequencies_hz": [
+              6.944444444444444e-05,
+              9.982638888888888e-05,
+              0.00013020833333333333,
+              0.00016059027777777778,
+              0.0001909722222222222,
+              0.00022135416666666668,
+              0.0002517361111111111,
+              0.00028211805555555553,
+              0.0003125,
+              0.00034288194444444443,
+              0.0003732638888888889,
+              0.00040364583333333333,
+              0.00043402777777777775,
+              0.00046440972222222223,
+              0.0004947916666666666,
+              0.0005251736111111111,
+              0.0005555555555555556,
+              0.00018499787630996175
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              }
+            ]
+          },
+          {
+            "degree": 2,
+            "frequencies_hz": [
+              6.944444444444444e-05,
+              9.982638888888888e-05,
+              0.00013020833333333333,
+              0.00016059027777777778,
+              0.0001909722222222222,
+              0.00022135416666666668,
+              0.0002517361111111111,
+              0.00028211805555555553,
+              0.0003125,
+              0.00034288194444444443,
+              0.0003732638888888889,
+              0.00040364583333333333,
+              0.00043402777777777775,
+              0.00046440972222222223,
+              0.0004947916666666666,
+              0.0005251736111111111,
+              0.0005555555555555556,
+              9.239938513258364e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 2.220446049250313e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              }
+            ]
+          },
+          {
+            "degree": 3,
+            "frequencies_hz": [
+              6.944444444444444e-05,
+              9.982638888888888e-05,
+              0.00013020833333333333,
+              0.00016059027777777778,
+              0.0001909722222222222,
+              0.00022135416666666668,
+              0.0002517361111111111,
+              0.00028211805555555553,
+              0.0003125,
+              0.00034288194444444443,
+              0.0003732638888888889,
+              0.00040364583333333333,
+              0.00043402777777777775,
+              0.00046440972222222223,
+              0.0004947916666666666,
+              0.0005251736111111111,
+              0.0005555555555555556,
+              9.255417134011181e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 4.440892098500626e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 2.220446049250313e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 4.440892098500626e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 0.0
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              }
+            ]
+          },
+          {
+            "degree": 4,
+            "frequencies_hz": [
+              6.944444444444444e-05,
+              9.982638888888888e-05,
+              0.00013020833333333333,
+              0.00016059027777777778,
+              0.0001909722222222222,
+              0.00022135416666666668,
+              0.0002517361111111111,
+              0.00028211805555555553,
+              0.0003125,
+              0.00034288194444444443,
+              0.0003732638888888889,
+              0.00040364583333333333,
+              0.00043402777777777775,
+              0.00046440972222222223,
+              0.0004947916666666666,
+              0.0005251736111111111,
+              0.0005555555555555556,
+              9.257800588006208e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 4.440892098500626e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 5.551115123125783e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 4.440892098500626e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 3.3306690738754696e-16
+              }
+            ]
+          },
+          {
+            "degree": 6,
+            "frequencies_hz": [
+              6.944444444444444e-05,
+              9.982638888888888e-05,
+              0.00013020833333333333,
+              0.00016059027777777778,
+              0.0001909722222222222,
+              0.00022135416666666668,
+              0.0002517361111111111,
+              0.00028211805555555553,
+              0.0003125,
+              0.00034288194444444443,
+              0.0003732638888888889,
+              0.00040364583333333333,
+              0.00043402777777777775,
+              0.00046440972222222223,
+              0.0004947916666666666,
+              0.0005251736111111111,
+              0.0005555555555555556,
+              9.259870953558694e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 0.0
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 8.881784197001252e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -2.220446049250313e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 8.881784197001252e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 0.0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "case": "400m",
+        "degree_results": [
+          {
+            "degree": 1,
+            "frequencies_hz": [
+              3.472222222222222e-05,
+              6.727430555555556e-05,
+              9.982638888888888e-05,
+              0.00013237847222222223,
+              0.00016493055555555556,
+              0.0001974826388888889,
+              0.00023003472222222224,
+              0.00026258680555555557,
+              0.0002951388888888889,
+              0.0003276909722222222,
+              0.00036024305555555554,
+              0.00039279513888888887,
+              0.00042534722222222225,
+              0.0004578993055555556,
+              0.0004904513888888889,
+              0.0005230034722222222,
+              0.0005555555555555556,
+              7.454840136273694e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 4.440892098500626e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -3.3306690738754696e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -1.1102230246251565e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -1.1102230246251565e-16
+              }
+            ]
+          },
+          {
+            "degree": 2,
+            "frequencies_hz": [
+              3.472222222222222e-05,
+              6.727430555555556e-05,
+              9.982638888888888e-05,
+              0.00013237847222222223,
+              0.00016493055555555556,
+              0.0001974826388888889,
+              0.00023003472222222224,
+              0.00026258680555555557,
+              0.0002951388888888889,
+              0.0003276909722222222,
+              0.00036024305555555554,
+              0.00039279513888888887,
+              0.00042534722222222225,
+              0.0004578993055555556,
+              0.0004904513888888889,
+              0.0005230034722222222,
+              0.0005555555555555556,
+              7.44065544697027e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 4.440892098500626e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 0.0
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 8.881784197001252e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -1.1102230246251565e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 8.881784197001252e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 0.0
+              }
+            ]
+          },
+          {
+            "degree": 3,
+            "frequencies_hz": [
+              3.472222222222222e-05,
+              6.727430555555556e-05,
+              9.982638888888888e-05,
+              0.00013237847222222223,
+              0.00016493055555555556,
+              0.0001974826388888889,
+              0.00023003472222222224,
+              0.00026258680555555557,
+              0.0002951388888888889,
+              0.0003276909722222222,
+              0.00036024305555555554,
+              0.00039279513888888887,
+              0.00042534722222222225,
+              0.0004578993055555556,
+              0.0004904513888888889,
+              0.0005230034722222222,
+              0.0005555555555555556,
+              7.457805331347892e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -4.440892098500626e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -4.440892098500626e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 2.220446049250313e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -4.440892098500626e-16
+              }
+            ]
+          },
+          {
+            "degree": 4,
+            "frequencies_hz": [
+              3.472222222222222e-05,
+              6.727430555555556e-05,
+              9.982638888888888e-05,
+              0.00013237847222222223,
+              0.00016493055555555556,
+              0.0001974826388888889,
+              0.00023003472222222224,
+              0.00026258680555555557,
+              0.0002951388888888889,
+              0.0003276909722222222,
+              0.00036024305555555554,
+              0.00039279513888888887,
+              0.00042534722222222225,
+              0.0004578993055555556,
+              0.0004904513888888889,
+              0.0005230034722222222,
+              0.0005555555555555556,
+              7.45677767931665e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 1.1102230246251565e-15,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 1.1102230246251565e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 8.881784197001252e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -1.1102230246251565e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 8.881784197001252e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": 1.1102230246251565e-16
+              }
+            ]
+          },
+          {
+            "degree": 6,
+            "frequencies_hz": [
+              3.472222222222222e-05,
+              6.727430555555556e-05,
+              9.982638888888888e-05,
+              0.00013237847222222223,
+              0.00016493055555555556,
+              0.0001974826388888889,
+              0.00023003472222222224,
+              0.00026258680555555557,
+              0.0002951388888888889,
+              0.0003276909722222222,
+              0.00036024305555555554,
+              0.00039279513888888887,
+              0.00042534722222222225,
+              0.0004578993055555556,
+              0.0004904513888888889,
+              0.0005230034722222222,
+              0.0005555555555555556,
+              7.45976565642071e-05
+            ],
+            "scale_rows": [
+              {
+                "multiplier": 1.0,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -2.220446049250313e-16
+              },
+              {
+                "multiplier": 1e-200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -3.3306690738754696e-16
+              },
+              {
+                "multiplier": 1e+200,
+                "max_score_difference": 6.661338147750939e-16,
+                "alpha_mismatch_frequency_count": 0,
+                "golden_frequency_score_difference": -2.220446049250313e-16
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "reproduction_source": {
+    "restore_path": "tmp/ev5_production_acceptance/spherical_scale_scan.py",
+    "sha256": "ea82c29a048e6b15bb0762c940f983b9a9902fa9b82c5ba8745fa670421f56c2",
+    "utf8_source": "\"\"\"Reproduce the limited objective scan after safe affine preprocessing.\"\"\"\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport sys\nimport time\nfrom datetime import datetime, timezone\nimport numpy as np\n\nROOT = Path(__file__).resolve().parents[2]\nsys.path.insert(0, str(ROOT))\nfrom inversion.src.spherical_response import _ResponseScore, DEGREES\n\nstarted = time.perf_counter()\nfrozen = json.loads((ROOT/'docs/4.3/vs_4.2/experiments/data/2026-10-20_EV5_PRECISION_MODELS.json').read_text(encoding='utf8'))\ncases = []\nfor tag, maximum in [('70m', 14400), ('400m', 28800)]:\n    with np.load(ROOT/f'tmp/ev5_precision_solution_20261020/geometry/{tag}_inputs.npz') as source:\n        t, y, phase, z, ids = [source[k] for k in ('times', 'features', 'phase', 'z', 'runs')]\n    groups = np.array([np.flatnonzero(ids == group) for group in np.unique(ids)])\n    references = frozen['results'][f'geometry/{tag}_full500_all_train.json']['data']['results']\n    by_degree = []\n    for degree in DEGREES:\n        golden = next(entry['top10'][0] for entry in references if entry['degree'] == degree)\n        frequencies = np.r_[np.linspace(1/maximum, 1/1800., 17), 1/golden['period_s']]\n        baseline = _ResponseScore(t, y, phase, z, groups, degree)\n        old = [baseline.evaluate(f, True) for f in frequencies]\n        rows = []\n        for multiplier in (1., 1e-200, 1e200):\n            scaled = y*multiplier\n            normalized = scaled/np.max(abs(scaled), axis=0)\n            normalized -= normalized.mean(axis=0)\n            normalized /= normalized.std(axis=0)\n            scorer = _ResponseScore(t, normalized, phase, z, groups, degree)\n            new = [scorer.evaluate(f, True) for f in frequencies]\n            difference = max(abs(a['score']-b['score']) for a, b in zip(old, new))\n            alpha_mismatches = sum(a['alpha_by_feature'] != b['alpha_by_feature'] for a, b in zip(old, new))\n            assert difference < 1e-8, (tag, degree, multiplier, difference)\n            assert new[-1]['alpha_by_feature'] == golden['alpha_by_feature']\n            assert abs(new[-1]['score']-golden['cv_mean']) < 1e-8\n            rows.append(dict(multiplier=multiplier, max_score_difference=difference,\n                             alpha_mismatch_frequency_count=alpha_mismatches,\n                             golden_frequency_score_difference=new[-1]['score']-golden['cv_mean']))\n        by_degree.append(dict(degree=degree, frequencies_hz=frequencies.tolist(), scale_rows=rows))\n    cases.append(dict(case=tag, degree_results=by_degree))\nmodule = ROOT/'inversion/src/spherical_response.py'\nrecord = dict(measured_utc=datetime.now(timezone.utc).isoformat(), elapsed_s=time.perf_counter()-started,\n    baseline_source_sha256='88529e144da2df558c128d6cb949a3830f46c501c5011be589fdeb5066d09770',\n    current_source_sha256=hashlib.sha256(module.read_bytes()).hexdigest(),\n    change='Pass the already safely normalized channels to _ResponseScore instead of original y.',\n    scope='Objective scan only: 17 frequencies over full domain plus each degree frozen optimum, all 5 degrees, two clean inputs, 3 scales. Full search belongs to baseline source evidence.',\n    command='conda run --no-capture-output -n pytorch python tmp/ev5_production_acceptance/spherical_scale_scan.py',\n    environment={k: os.environ.get(k) for k in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS']},\n    cases=cases)\n(ROOT/'tmp/ev5_production_acceptance/spherical_scale_scan.json').write_text(json.dumps(record, indent=2), encoding='utf8')\nprint(record['current_source_sha256'], record['elapsed_s'])\n"
+  }
+}

@@ -1,8 +1,13 @@
 # 实验设计与验收
 
-当前实验的数值、输入身份、失败记录和复建命令统一保存在[4.3实验导航](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.3/vs_4.2/experiments/README.md#reports)，本文件规定跨实验保持一致的验收方法，不替代专题证据。临时数据放仓库 `tmp/`，因为推荐的E盘缓存不在当前可写范围；Python使用Conda `pytorch` 环境。
+
+当前实验的数值、输入身份、失败记录和复建命令统一保存在[4.3实验导航](https://github.com/lewgeon/radar-asteroid-rotation-period-pipeline/blob/chirp-pulse/docs/4.3/vs_4.2/experiments/README.md#reports)及[4.4实验导航](docs/4.4/vs_4.3/experiments/README.md)，本文件规定跨实验保持一致的验收方法，不替代专题证据。临时构建、日志及大数组优先放工作区`tmp/`，不得在C盘生成非必要文件。Python使用Conda `pytorch`环境。
 
 ## 全链路最小契约验收
+
+当前待实施对照：按[同目标、同跨度光学／雷达方案](docs/4.4/vs_4.3/plans/OPTICAL_RADAR_BENCHMARK_PLAN.md)分别生成两类观测，先比较现有雷达方法、成熟光变周期法和凸反演，不预判优劣。共同真值、时间／几何／采样控制及先验须冻结；真值误差、重复标准差与每次报告区间的覆盖率分别验收，不能将文献±与仿真误差直接排名。方案尚未实施，不恢复停止作业，不自动开展算法替换。
+
+主矩阵以均大于一转的相同窗口为控制量，正式比较同时报告误差和不确定度；不预设误差随窗口单调下降。只有横向较短窗口的雷达优势及纵向两类方法的改善趋势得到支持，才追加共同精度目标下的窗口比较。光学加噪单位与标定合同统一见[计划3.3](docs/4.4/vs_4.3/plans/OPTICAL_RADAR_BENCHMARK_PLAN.md#photometric-noise)，三篇原始方法论文的误差处理见[文献核对](docs/4.4/research/PERIOD_PRECISION_BENCHMARKS.md#original-paper-uncertainty)。
 
 原反演子模块的最小验收规则并入本文件，避免根项目与子模块维护两份实验协议：配置只接受现行字段，废弃或重复冲突物理量应明确报错；Chirp的ADC时序、脉宽和路径支撑由观测计划提供；CPI以秒配置并按回波PRF转为整数脉冲数；点目标与网格配置互斥裁剪，点目标幅度只使用`amplitude_scale`；一维／二维IQ及全部行轴字段执行严格形状校验。快速smoke只证明入口与链路可运行，不能冒充论文级精度复现；科研结论还需固定数据、参数、种子、硬件、误差指标及计算耗时。
 

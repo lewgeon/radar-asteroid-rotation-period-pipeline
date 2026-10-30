@@ -1,0 +1,120 @@
+{
+  "recorded_utc": "2026-10-23T09:56:20.807372+00:00",
+  "environment": {
+    "conda": "pytorch",
+    "blas_threads": 1
+  },
+  "source_sha256": {
+    "inversion/src/predictive_energy.py": "ed90cbbfecf719f161c57864ae2ebae89168a17c6c47f2fc1b6af976dcbd0514",
+    "inversion/src/spherical_response.py": "af6e3706e435b08447136c7e810c95a3368337a41663f3a5b0ebc55c78525fe1",
+    "inversion/src/precision_selection.py": "cf9451b3e893c0fc084a73a9ce8dd294cd166306c2b6844b38958170e794b746",
+    "inversion/src/inversion.py": "e10535f2d843fd823658502b01994071fd3cf25996d470bd40d7673f98f37d9d",
+    "inversion/src/dataset.py": "5e1fff751fce9b63888e5e72c2015372658ca5b67c299c13ac6daecb00da6793",
+    "inversion/src/period_uncertainty.py": "0f9ea9e8f99213dc7e0ec0c7178c46a612057b97fff5eaa3586cc3ce5b93f151",
+    "inversion/src/selection_report.py": "a143cdbee47608b5c54a8aad403c997b67cb3be1b9e5c09dd57bbcffc18e3231",
+    "inversion/scripts/estimate_period.py": "1f6d4065edbb7317f8a362de10a49163504b9cdbd9a8bc4d15eec5c3b2fbdd89",
+    "rotation_gui/schema.py": "803211d4248996ec6b7eed25fce406b7c4c9f5d9e75ba36139bde0e8af1a2b0e",
+    "rotation_gui/window/parameter_form.py": "0832e80aa986503bf5c8066442388d4235e77f0ee7a52b276a00efb84f86d7ab",
+    "scripts/verify_ev5_precision.py": "98603bc324456509f565a43bd232fc4b53d7229172a4b2bbcce58dd671560098",
+    "scripts/verify_ev5_precision_clean.py": "07f60eed38a6cee42c888614a10a5f40084b3368516591d11461214c90d0da0a"
+  },
+  "regression": {
+    "command": "python -m pytest --import-mode=importlib tests/test_precision_integration.py tests/test_predictive_energy.py tests/test_spherical_response.py inversion/tests/test_joint_period.py inversion/tests/test_period_uncertainty.py tests/test_optional_period_precision.py tests/test_period_uncertainty_experiment.py -q",
+    "passed": 65,
+    "skipped": 4,
+    "wall_seconds": 79.73,
+    "raw_log": "tmp/ev5_production_acceptance/final_regression_verified.log"
+  },
+  "additional_frozen_cache_search": {
+    "case": "400m",
+    "h": 8,
+    "period_s": 13408.502628465269,
+    "score": 1.0193027834601618,
+    "command": "EV5_FULL_REGRESSION=1 python -m pytest tests/test_predictive_energy.py -k \"frozen_clean_full_search and 400m\" -q -s",
+    "passed": 1,
+    "deselected": 19,
+    "wall_seconds": 154.9,
+    "period_tolerance_s": 0.01,
+    "score_tolerance": 1e-08,
+    "raw_log": "tmp/ev5_production_acceptance/energy_cached_400m_final.log"
+  },
+  "subsequent_report_wording_check": {
+    "command": "python -m pytest tests/test_precision_integration.py -k configuration_contract -q",
+    "passed": 2,
+    "scope": "After the 65-test run, the teaching details text explicitly distinguishes old covariance diagnostics from new selectors."
+  },
+  "cli": [
+    {
+      "policy": "predictive_skill_energy",
+      "selected_order": 2,
+      "period_s": 10806.327576569362,
+      "score": 0.1392108246217193,
+      "config": {
+        "period_min_s": 1800.0,
+        "period_max_s": 14400.0,
+        "period_grid_size": 4000,
+        "cpi_duration_s": 1.0,
+        "motion_compensation": "auto",
+        "period_time_role": "scatter_centroid",
+        "los_phase_compensation": false,
+        "multi_harmonic_enabled": false,
+        "refine_period": true,
+        "compare_methods": false,
+        "doppler_estimator": "spectral_moments",
+        "period_selection": "predictive_skill_energy",
+        "compute_device": "cuda:0",
+        "uncertainty_method": "none"
+      },
+      "command": "python inversion/scripts/estimate_period.py --echo runs/ev5_snr_20261016_70m/echo/echo.npz --config tmp/ev5_production_acceptance/energy_70m.json --output tmp/ev5_production_acceptance/cli_energy_70m_verified",
+      "source_echo_identity": {
+        "path": "D:\\Documents\\rotation-period-measurement\\runs\\ev5_snr_20261016_70m\\echo\\echo.npz",
+        "size_bytes": 3540200080,
+        "mtime_ns": 1792162203560140500
+      },
+      "artifacts_sha256": {
+        "best_summary.json": "500e14abca8e3653f794c25d2cb90f6d24a8ea7048b394750cd8b0eedb642cdc",
+        "period_selection.json": "ff07e4f0f8d4899676c990ecff4655b62fd742d431307eb64cfc573f347bbc5f",
+        "inversion_complete.json": "ece5393be75be2cf1242964795e29926e1b5ec5798598b730f08590a83c0742a"
+      },
+      "preprocessing_scope": "reused_valid_frontend_cache_no_new_IQ_simulation"
+    },
+    {
+      "policy": "spherical_response",
+      "selected_order": 6,
+      "period_s": 13405.246840982338,
+      "score": 0.5397977075066034,
+      "config": {
+        "period_min_s": 1800.0,
+        "period_max_s": 28800.0,
+        "period_grid_size": 8000,
+        "cpi_duration_s": 8.0,
+        "motion_compensation": "auto",
+        "period_time_role": "scatter_centroid",
+        "los_phase_compensation": true,
+        "multi_harmonic_enabled": false,
+        "refine_period": true,
+        "compare_methods": false,
+        "doppler_estimator": "spectral_moments",
+        "period_selection": "spherical_response",
+        "compute_device": "cuda:0",
+        "uncertainty_method": "none",
+        "spin_axis_ra_deg": 105.0,
+        "spin_axis_dec_deg": -66.0,
+        "phase_period_convention": "full_rotation",
+        "cpi_hop_duration_s": 2.0
+      },
+      "command": "python inversion/scripts/estimate_period.py --echo runs/ev5_snr_longcpi_20261016_400m/echo/echo.npz --config tmp/ev5_production_acceptance/spherical_400m.json --output tmp/ev5_production_acceptance/cli_spherical_400m_verified",
+      "source_echo_identity": {
+        "path": "D:\\Documents\\rotation-period-measurement\\runs\\ev5_snr_longcpi_20261016_400m\\echo\\echo.npz",
+        "size_bytes": 1820299248,
+        "mtime_ns": 1792202572963858500
+      },
+      "artifacts_sha256": {
+        "best_summary.json": "7c4dea668e01418756d80c25a6ae73c7d7ba0e3f29fcb27788db6414d4dbbd93",
+        "period_selection.json": "236bee9572b0128958ffc1899878b4c560db3df7d71ca0df68bc7dd8fb3ae852",
+        "inversion_complete.json": "0f9fc6b146e34b284db0b9da0fc4fad430a82e8de099861b4b47bb3e6785768e"
+      },
+      "preprocessing_scope": "reused_valid_frontend_cache_no_new_IQ_simulation"
+    }
+  ]
+}
